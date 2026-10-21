@@ -41,5 +41,32 @@
     "showKillPoints": true,
     "showPlacementPoints": true
   },
-  "updatedAt": "2026-10-21T06:59:11.007Z"
+  "gameplay": {
+    "compositionMode": "OVERLAY_ONLY",
+    "captureActive": false,
+    "sourceId": null,
+    "sourceName": null,
+    "sourceType": null,
+    "sourceStatus": "IDLE",
+    "sourceStatusMessage": null,
+    "frameXPercent": 0,
+    "frameYPercent": 0,
+    "frameWidthPercent": 100,
+    "frameHeightPercent": 100,
+    "displayMode": "contain",
+    "cornerPreset": "center",
+    "opacity": 1,
+    "borderWidthPx": 0,
+    "borderColor": "#06b6d4",
+    "cornerRadiusPx": 0,
+    "showSourceLabel": true,
+    "layerOrder": "GAMEPLAY_BEHIND",
+    "leaderboardVisible": true,
+    "leaderboardScale": 1,
+    "leaderboardCornerPreset": "center",
+    "leaderboardBorderWidthPx": 0,
+    "leaderboardBorderColor": "#f59e0b",
+    "leaderboardCornerRadiusPx": 6
+  },
+  "updatedAt": "2026-10-21T07:47:49.216Z"
 }

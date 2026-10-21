@@ -12,22 +12,23 @@ import {
   sanitizeOverlayConfig,
   splitTeamsIntoBalancedColumns,
 } from '../shared/overlayLayout.js';
+import {
+  requestRemoteBrowserCaptureStream,
+  startElectronSourceCapture,
+  stopGameplayCapture,
+  subscribeGameplayCapture,
+} from '../shared/gameplayCaptureManager.js';
 import './styles/overlay.css';
 
 /**
  * Broadcast Overlay Viewport React Application
  * Phase 1, 2 & 3 Addendum: Responsive & Fully Customizable 16:9 Landscape Two-Column OBS Scorecard Overlay
- *
- * - Uses ResizeObserver + proportional CSS custom properties (--ov-*) to scale smoothly
- *   across 1920x1080, 1600x900, 1280x720, and custom canvas resolutions.
- * - Supports optional persistent background image with opacity, scale mode (cover/contain/stretch),
- *   and positioning while remaining strictly transparent (#00000000) when no background is set.
- * - Supports independent scorecard customization (width/height %, X/Y offset, row height/gap,
- *   column spacing, typography sizes, colors/opacity, and column/element visibility).
+ * + Gameplay Window Integration & Picture-in-Picture Broadcast Mode
  */
 export default function OverlayViewportApp({
   embeddedMode = false,
   overrideOverlayConfig = null,
+  onOpenGameplayWindow = null,
 }) {
   const [matchState, setMatchState] = useState(null);
   const [rowLimit, setRowLimit] = useState(26); // 26 | 20 | 16
@@ -35,6 +36,16 @@ export default function OverlayViewportApp({
     OVERLAY_CONNECTION_STATE.CONNECTED
   );
   const [localViewOverride, setLocalViewOverride] = useState(null);
+
+  // Live Gameplay MediaStream state
+  const [gameplayStreamState, setGameplayStreamState] = useState({
+    stream: null,
+    status: 'IDLE',
+    message: null,
+    sourceId: null,
+    sourceName: null,
+  });
+  const gameplayVideoRef = useRef(null);
 
   // Observed container dimensions via ResizeObserver for proportional scaling
   const viewportContainerRef = useRef(null);
@@ -284,13 +295,17 @@ export default function OverlayViewportApp({
     rowLimit
   );
 
-  // Compute responsive CSS variables and viewport scale
-  const { cssVars, config: normalizedConfig, fitReport } =
-    computeOverlayCssVariables(
-      effectiveOverlayConfig,
-      matchSplit.rowsPerColumn,
-      effectiveViewMode
-    );
+  // Compute responsive CSS variables, composition state, and viewport scale
+  const {
+    cssVars,
+    config: normalizedConfig,
+    fitReport,
+    compositionState,
+  } = computeOverlayCssVariables(
+    effectiveOverlayConfig,
+    matchSplit.rowsPerColumn,
+    effectiveViewMode
+  );
 
   const scaleMetrics = computeResponsiveCanvasScale({
     containerWidth: containerSize.width,
@@ -301,8 +316,70 @@ export default function OverlayViewportApp({
     referenceHeight: normalizedConfig.canvas.referenceHeight,
   });
 
-  const { scorecard, background, canvas } = normalizedConfig;
+  const { scorecard, background, canvas, gameplay } = normalizedConfig;
   const refScale = scaleMetrics.referenceScale;
+
+  // Subscribe to live gameplay MediaStream updates
+  useEffect(() => {
+    const unsubscribe = subscribeGameplayCapture((snap) => {
+      setGameplayStreamState(snap);
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
+
+  // Automatically connect to Electron desktopCapturer source or remote browser stream when captureActive is true
+  useEffect(() => {
+    if (!gameplay.captureActive) {
+      if (gameplayStreamState.stream) {
+        stopGameplayCapture();
+      }
+      return;
+    }
+
+    if (
+      (gameplay.sourceType === 'window' || gameplay.sourceType === 'screen') &&
+      gameplay.sourceId
+    ) {
+      const controller = getBroadcastController();
+      if (controller.runtime === 'electron') {
+        startElectronSourceCapture({
+          sourceId: gameplay.sourceId,
+          sourceName: gameplay.sourceName || 'Gameplay Source',
+          sourceType: gameplay.sourceType,
+        });
+      }
+    } else if (
+      gameplay.sourceType === 'browser-display' &&
+      !embeddedMode &&
+      !gameplayStreamState.stream
+    ) {
+      requestRemoteBrowserCaptureStream();
+    }
+  }, [
+    gameplay.captureActive,
+    gameplay.sourceId,
+    gameplay.sourceType,
+    gameplay.sourceName,
+    embeddedMode,
+    gameplayStreamState.stream,
+  ]);
+
+  // Attach active MediaStream to <video> element in real time
+  useEffect(() => {
+    const videoEl = gameplayVideoRef.current;
+    if (!videoEl) return;
+    if (
+      gameplayStreamState.stream &&
+      videoEl.srcObject !== gameplayStreamState.stream
+    ) {
+      videoEl.srcObject = gameplayStreamState.stream;
+      videoEl.play?.().catch(() => {});
+    } else if (!gameplayStreamState.stream && videoEl.srcObject) {
+      videoEl.srcObject = null;
+    }
+  }, [gameplayStreamState.stream, compositionState.showGameplayLayer]);
 
   // Dynamic column template for Match & Final tables based on KP/PP visibility
   const rankColW = `${Math.max(36, Math.round(54 * refScale))}px`;
@@ -598,6 +675,10 @@ export default function OverlayViewportApp({
           }}
           data-testid="overlay-viewport-root"
           data-overlay-mode={effectiveViewMode}
+          data-composition-mode={gameplay.compositionMode}
+          data-leaderboard-visible={compositionState.showLeaderboardLayer}
+          data-gameplay-visible={compositionState.showGameplayLayer}
+          data-gameplay-layer-order={gameplay.layerOrder}
           data-overlay-layout="landscape-16x9-two-column"
           data-canvas-width={canvas.width}
           data-canvas-height={canvas.height}
@@ -617,11 +698,100 @@ export default function OverlayViewportApp({
             />
           )}
 
-          {/* Independent Customizable Scorecard Stage */}
-          <div
-            data-testid="overlay-scorecard-stage"
-            className="overlay-scorecard-stage"
-          >
+          {/* Live Gameplay Feed Layer (Fullscreen or Picture-in-Picture Frame) */}
+          {compositionState.showGameplayLayer && (
+            <div
+              data-testid="overlay-gameplay-frame"
+              data-gameplay-mode={gameplay.compositionMode}
+              data-gameplay-fit={gameplay.displayMode}
+              data-gameplay-status={
+                gameplayStreamState.stream
+                  ? 'LIVE'
+                  : gameplay.sourceStatus || 'IDLE'
+              }
+              className={`overlay-gameplay-frame ${
+                gameplay.compositionMode === 'FULLSCREEN_GAMEPLAY' ||
+                gameplay.compositionMode === 'GAMEPLAY_ONLY'
+                  ? 'overlay-gameplay-frame-Fullscreen'
+                  : 'overlay-gameplay-frame-Pip'
+              }`}
+            >
+              {gameplayStreamState.stream ? (
+                <>
+                  <video
+                    ref={gameplayVideoRef}
+                    data-testid="overlay-gameplay-video"
+                    autoPlay
+                    playsInline
+                    muted
+                    className="overlay-gameplay-video"
+                  />
+                  {gameplay.showSourceLabel && gameplay.sourceName && (
+                    <div
+                      data-testid="overlay-gameplay-source-badge"
+                      className="pointer-events-none absolute top-2 left-2.5 flex items-center gap-1.5 rounded bg-slate-950/85 border border-cyan-500/40 px-2.5 py-1 text-xs font-bold text-cyan-300"
+                      style={{
+                        fontSize: `${Math.max(9, Math.round(12 * refScale))}px`,
+                      }}
+                    >
+                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="truncate max-w-[260px]">
+                        LIVE · {gameplay.sourceName}
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div
+                  data-testid="overlay-gameplay-standby"
+                  className="flex h-full w-full flex-col items-center justify-center rounded border border-dashed border-cyan-500/45 bg-slate-950/75 p-4 text-center"
+                >
+                  <div
+                    className="broadcast-display-font font-bold tracking-wider text-cyan-300 uppercase"
+                    style={{
+                      fontSize: `${Math.max(11, Math.round(18 * refScale))}px`,
+                    }}
+                  >
+                    {gameplay.sourceStatus === 'MINIMIZED'
+                      ? 'Gameplay Source Window Minimized'
+                      : gameplay.sourceStatus === 'PERMISSION_DENIED'
+                      ? 'Screen Capture Permission Denied'
+                      : gameplay.sourceStatus === 'UNAVAILABLE'
+                      ? 'Gameplay Source Closed or Unavailable'
+                      : gameplay.sourceName
+                      ? `Gameplay Source Standby · ${gameplay.sourceName}`
+                      : 'Awaiting Live Gameplay Window Feed'}
+                  </div>
+                  <p
+                    className="mt-1 max-w-md text-slate-300"
+                    style={{
+                      fontSize: `${Math.max(9, Math.round(12 * refScale))}px`,
+                    }}
+                  >
+                    {gameplayStreamState.message ||
+                      gameplay.sourceStatusMessage ||
+                      `Mode: ${gameplay.compositionMode.replace(/_/g, ' ')} · Frame ${gameplay.frameWidthPercent}%×${gameplay.frameHeightPercent}% (${gameplay.displayMode}). Select a live window or screen in Gameplay Window.`}
+                  </p>
+                  {embeddedMode && onOpenGameplayWindow && (
+                    <button
+                      type="button"
+                      onClick={onOpenGameplayWindow}
+                      className="overlay-no-drag mt-2.5 rounded bg-cyan-400 px-3 py-1 text-xs font-bold text-slate-950 hover:bg-cyan-300"
+                    >
+                      Select Gameplay Source
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Independent Customizable Scorecard Stage (Live Transparent Overlay) */}
+          {compositionState.showLeaderboardLayer && (
+            <div
+              data-testid="overlay-scorecard-stage"
+              className="overlay-scorecard-stage"
+            >
             {/* Dynamic Broadcast Header (Compact 16:9 Top Bar) */}
             {scorecard.showHeader && (
               <div
@@ -952,7 +1122,8 @@ export default function OverlayViewportApp({
                 </div>
               </div>
             )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

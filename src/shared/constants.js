@@ -57,6 +57,33 @@ export const OVERLAY_VIEW_MODES = Object.freeze({
   END_OF_MATCH: 'END_OF_MATCH',
 });
 
+export const BROADCAST_COMPOSITION_MODES = Object.freeze({
+  OVERLAY_ONLY: 'OVERLAY_ONLY',
+  FULLSCREEN_GAMEPLAY: 'FULLSCREEN_GAMEPLAY',
+  PICTURE_IN_PICTURE: 'PICTURE_IN_PICTURE',
+  LEADERBOARD_FOCUS: 'LEADERBOARD_FOCUS',
+  GAMEPLAY_ONLY: 'GAMEPLAY_ONLY',
+});
+
+export const GAMEPLAY_FIT_MODES = Object.freeze({
+  CONTAIN: 'contain',
+  COVER: 'cover',
+  STRETCH: 'stretch',
+});
+
+export const GAMEPLAY_LAYER_ORDERS = Object.freeze({
+  GAMEPLAY_BEHIND: 'GAMEPLAY_BEHIND',
+  GAMEPLAY_FRONT: 'GAMEPLAY_FRONT',
+});
+
+export const CORNER_PLACEMENT_PRESETS = Object.freeze({
+  TOP_LEFT: 'top-left',
+  TOP_RIGHT: 'top-right',
+  BOTTOM_LEFT: 'bottom-left',
+  BOTTOM_RIGHT: 'bottom-right',
+  CENTER: 'center',
+});
+
 export const CSV_SCHEMA_HEADERS = Object.freeze([
   'Key',
   'TeamName',
@@ -76,7 +103,7 @@ export const TEAM_KEYS_AZ = Object.freeze(
 
 /**
  * Strictly allowlisted IPC channels for Main <-> Renderer communication.
- * Includes all Phase 1 channels plus Phase 2/3 authoritative match & CSV channels.
+ * Includes all Phase 1 channels plus Phase 2/3 authoritative match, CSV & capture channels.
  */
 export const IPC_CHANNELS = Object.freeze({
   // Phase 1 Invoke Channels (Preserved)
@@ -95,6 +122,10 @@ export const IPC_CHANNELS = Object.freeze({
   WINDOW_MAXIMIZE_TOGGLE: 'window:maximize-toggle',
   WINDOW_FULLSCREEN_TOGGLE: 'window:fullscreen-toggle',
   WINDOW_CLOSE: 'window:close',
+
+  // Phase 3 Gameplay Window / Desktop Capture Invoke Channels
+  GET_CAPTURE_SOURCES: 'capture:get-sources',
+  GET_CAPTURE_STATUS: 'capture:get-status',
 
   // Phase 2 & Phase 3 Authoritative Match Engine Invoke Channels
   GET_MATCH_STATE: 'match:get-state',
@@ -139,6 +170,8 @@ export const ALLOWED_INVOKE_CHANNELS = new Set([
   IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE,
   IPC_CHANNELS.WINDOW_FULLSCREEN_TOGGLE,
   IPC_CHANNELS.WINDOW_CLOSE,
+  IPC_CHANNELS.GET_CAPTURE_SOURCES,
+  IPC_CHANNELS.GET_CAPTURE_STATUS,
   IPC_CHANNELS.GET_MATCH_STATE,
   IPC_CHANNELS.SET_ACTIVE_GAME,
   IPC_CHANNELS.UPDATE_BROADCAST_META,

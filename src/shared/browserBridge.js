@@ -677,6 +677,46 @@ export function getBroadcastController() {
       return { ok: true };
     },
 
+    // Phase 3 Gameplay Window / Desktop Capture Methods
+    getCaptureStatus: async () => {
+      const hasDisplayMedia = Boolean(
+        typeof navigator !== 'undefined' &&
+          navigator.mediaDevices &&
+          typeof navigator.mediaDevices.getDisplayMedia === 'function'
+      );
+      return {
+        ok: hasDisplayMedia,
+        runtime: 'browser-media',
+        hasDesktopCapturer: false,
+        hasBrowserDisplayMedia: hasDisplayMedia,
+        permissionStatus: hasDisplayMedia ? 'prompt' : 'unsupported',
+        canCapture: hasDisplayMedia,
+        message: hasDisplayMedia
+          ? 'Running in web browser mode. Click "Select Window / Screen (Browser Capture)" to choose an application window, tab, or display via the browser media picker. In the packaged Electron desktop build, native desktopCapturer window & display thumbnails are listed automatically.'
+          : 'Screen capture is not supported in this browser context.',
+      };
+    },
+
+    getCaptureSources: async () => {
+      const hasDisplayMedia = Boolean(
+        typeof navigator !== 'undefined' &&
+          navigator.mediaDevices &&
+          typeof navigator.mediaDevices.getDisplayMedia === 'function'
+      );
+      return {
+        ok: true,
+        runtime: 'browser-media',
+        hasDesktopCapturer: false,
+        hasBrowserDisplayMedia: hasDisplayMedia,
+        permissionStatus: hasDisplayMedia ? 'prompt' : 'unsupported',
+        sources: [],
+        message: hasDisplayMedia
+          ? 'Electron desktopCapturer window enumeration requires the Electron desktop runtime. In browser mode, use "Select Window / Screen (Browser Capture)" to pick a live window or screen feed.'
+          : 'Screen capture is not supported in this environment.',
+        fetchedAt: new Date().toISOString(),
+      };
+    },
+
     // Phase 2 Authoritative Match Methods
     getMatchState: async () => {
       try {

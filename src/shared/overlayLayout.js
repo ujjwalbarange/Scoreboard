@@ -65,6 +65,85 @@ export const OVERLAY_ACCENT_PRESETS = Object.freeze([
   { id: 'violet', label: 'Apex Violet', color: '#8b5cf6' },
 ]);
 
+export const OVERLAY_COMPOSITION_MODES = Object.freeze([
+  {
+    id: 'OVERLAY_ONLY',
+    label: 'Overlay Only',
+    shortLabel: 'Overlay Only',
+    description: 'Transparent OBS leaderboard overlay without gameplay feed.',
+  },
+  {
+    id: 'FULLSCREEN_GAMEPLAY',
+    label: 'Fullscreen Gameplay',
+    shortLabel: 'Fullscreen + Corner',
+    description:
+      'Gameplay fills the 16:9 canvas with the live leaderboard docked in a configurable corner.',
+  },
+  {
+    id: 'PICTURE_IN_PICTURE',
+    label: 'Picture-in-Picture',
+    shortLabel: 'PiP Gameplay',
+    description:
+      'Gameplay appears in a smaller, movable, resizable PiP frame alongside the live leaderboard.',
+  },
+  {
+    id: 'LEADERBOARD_FOCUS',
+    label: 'Leaderboard Focus',
+    shortLabel: 'Leaderboard Focus',
+    description:
+      'Leaderboard becomes prominent while gameplay remains visible in a compact secondary frame.',
+  },
+  {
+    id: 'GAMEPLAY_ONLY',
+    label: 'Gameplay Only',
+    shortLabel: 'Gameplay Only',
+    description:
+      'Hides the leaderboard without stopping live gameplay capture.',
+  },
+]);
+
+export const GAMEPLAY_DISPLAY_MODES = Object.freeze([
+  {
+    id: 'contain',
+    label: 'Fitted (Preserve Aspect Ratio)',
+    shortLabel: 'Fitted (16:9)',
+    cssObjectFit: 'contain',
+  },
+  {
+    id: 'cover',
+    label: 'Fullscreen Fill (Crop to Fill)',
+    shortLabel: 'Fullscreen Fill',
+    cssObjectFit: 'cover',
+  },
+  {
+    id: 'stretch',
+    label: 'Stretch (100% × 100%)',
+    shortLabel: 'Stretch',
+    cssObjectFit: 'fill',
+  },
+]);
+
+export const CORNER_PRESET_OPTIONS = Object.freeze([
+  { id: 'top-left', label: 'Top-Left', shortLabel: 'TL' },
+  { id: 'top-right', label: 'Top-Right', shortLabel: 'TR' },
+  { id: 'bottom-left', label: 'Bottom-Left', shortLabel: 'BL' },
+  { id: 'bottom-right', label: 'Bottom-Right', shortLabel: 'BR' },
+  { id: 'center', label: 'Center', shortLabel: 'CTR' },
+]);
+
+export const GAMEPLAY_LAYER_ORDER_OPTIONS = Object.freeze([
+  {
+    id: 'GAMEPLAY_BEHIND',
+    label: 'Gameplay Behind Leaderboard (Default)',
+    shortLabel: 'Behind Leaderboard',
+  },
+  {
+    id: 'GAMEPLAY_FRONT',
+    label: 'Gameplay Frame In Front of Leaderboard',
+    shortLabel: 'In Front (PiP)',
+  },
+]);
+
 export const ALLOWED_BG_MIME_TYPES = Object.freeze(
   new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp'])
 );
@@ -118,6 +197,33 @@ export const DEFAULT_OVERLAY_CONFIG = Object.freeze({
     showKillPoints: true,
     showPlacementPoints: true,
   }),
+  gameplay: Object.freeze({
+    compositionMode: 'OVERLAY_ONLY', // 'OVERLAY_ONLY' | 'FULLSCREEN_GAMEPLAY' | 'PICTURE_IN_PICTURE' | 'LEADERBOARD_FOCUS' | 'GAMEPLAY_ONLY'
+    captureActive: false,
+    sourceId: null,
+    sourceName: null,
+    sourceType: null, // 'window' | 'screen' | 'browser-display' | null
+    sourceStatus: 'IDLE', // 'IDLE' | 'CONNECTING' | 'LIVE' | 'MINIMIZED' | 'PERMISSION_DENIED' | 'UNAVAILABLE' | 'STOPPED'
+    sourceStatusMessage: null,
+    frameXPercent: 58,
+    frameYPercent: 56,
+    frameWidthPercent: 38,
+    frameHeightPercent: 38,
+    displayMode: 'contain', // 'contain' | 'cover' | 'stretch'
+    cornerPreset: 'bottom-right',
+    opacity: 1,
+    borderWidthPx: 2,
+    borderColor: '#06b6d4',
+    cornerRadiusPx: 8,
+    showSourceLabel: true,
+    layerOrder: 'GAMEPLAY_BEHIND', // 'GAMEPLAY_BEHIND' | 'GAMEPLAY_FRONT'
+    leaderboardVisible: true,
+    leaderboardScale: 1,
+    leaderboardCornerPreset: 'center',
+    leaderboardBorderWidthPx: 0,
+    leaderboardBorderColor: '#f59e0b',
+    leaderboardCornerRadiusPx: 6,
+  }),
 });
 
 /**
@@ -128,6 +234,7 @@ export function createDefaultOverlayConfig() {
     canvas: { ...DEFAULT_OVERLAY_CONFIG.canvas },
     background: { ...DEFAULT_OVERLAY_CONFIG.background },
     scorecard: { ...DEFAULT_OVERLAY_CONFIG.scorecard },
+    gameplay: { ...DEFAULT_OVERLAY_CONFIG.gameplay },
   };
 }
 
@@ -185,6 +292,10 @@ export function sanitizeOverlayConfig(input, baseConfig = DEFAULT_OVERLAY_CONFIG
             ...DEFAULT_OVERLAY_CONFIG.scorecard,
             ...(baseConfig.scorecard || {}),
           },
+          gameplay: {
+            ...DEFAULT_OVERLAY_CONFIG.gameplay,
+            ...(baseConfig.gameplay || {}),
+          },
         }
       : createDefaultOverlayConfig();
 
@@ -202,6 +313,8 @@ export function sanitizeOverlayConfig(input, baseConfig = DEFAULT_OVERLAY_CONFIG
     input.scorecard && typeof input.scorecard === 'object'
       ? input.scorecard
       : {};
+  const rawGameplay =
+    input.gameplay && typeof input.gameplay === 'object' ? input.gameplay : {};
 
   // 1. Canvas resolution & scaling config
   let width = Math.round(
@@ -444,6 +557,182 @@ export function sanitizeOverlayConfig(input, baseConfig = DEFAULT_OVERLAY_CONFIG
       ? rawScorecard.showPlacementPoints
       : base.scorecard.showPlacementPoints;
 
+  // 4. Gameplay Capture & Picture-in-Picture Composition config
+  const validCompositionModes = new Set(
+    OVERLAY_COMPOSITION_MODES.map((m) => m.id)
+  );
+  const compositionMode =
+    typeof rawGameplay.compositionMode === 'string' &&
+    validCompositionModes.has(rawGameplay.compositionMode)
+      ? rawGameplay.compositionMode
+      : base.gameplay.compositionMode;
+
+  const captureActive =
+    typeof rawGameplay.captureActive === 'boolean'
+      ? rawGameplay.captureActive
+      : base.gameplay.captureActive;
+
+  const sourceId =
+    rawGameplay.sourceId === null
+      ? null
+      : typeof rawGameplay.sourceId === 'string' && rawGameplay.sourceId.trim()
+      ? rawGameplay.sourceId.trim().slice(0, 160)
+      : base.gameplay.sourceId;
+
+  const sourceName =
+    rawGameplay.sourceName === null
+      ? null
+      : typeof rawGameplay.sourceName === 'string' &&
+        rawGameplay.sourceName.trim()
+      ? rawGameplay.sourceName.trim().slice(0, 160)
+      : base.gameplay.sourceName;
+
+  const validSourceTypes = new Set(['window', 'screen', 'browser-display']);
+  const sourceType =
+    rawGameplay.sourceType === null
+      ? null
+      : typeof rawGameplay.sourceType === 'string' &&
+        validSourceTypes.has(rawGameplay.sourceType)
+      ? rawGameplay.sourceType
+      : base.gameplay.sourceType;
+
+  const validStatuses = new Set([
+    'IDLE',
+    'CONNECTING',
+    'LIVE',
+    'MINIMIZED',
+    'PERMISSION_DENIED',
+    'UNAVAILABLE',
+    'STOPPED',
+  ]);
+  const sourceStatus =
+    typeof rawGameplay.sourceStatus === 'string' &&
+    validStatuses.has(rawGameplay.sourceStatus)
+      ? rawGameplay.sourceStatus
+      : base.gameplay.sourceStatus;
+
+  const sourceStatusMessage =
+    rawGameplay.sourceStatusMessage === null
+      ? null
+      : typeof rawGameplay.sourceStatusMessage === 'string'
+      ? rawGameplay.sourceStatusMessage.trim().slice(0, 260)
+      : base.gameplay.sourceStatusMessage;
+
+  const frameWidthPercent = Number(
+    clampNumber(
+      rawGameplay.frameWidthPercent,
+      15,
+      100,
+      base.gameplay.frameWidthPercent
+    ).toFixed(1)
+  );
+  const frameHeightPercent = Number(
+    clampNumber(
+      rawGameplay.frameHeightPercent,
+      15,
+      100,
+      base.gameplay.frameHeightPercent
+    ).toFixed(1)
+  );
+  const frameXPercent = Number(
+    clampNumber(
+      rawGameplay.frameXPercent,
+      0,
+      100 - Math.min(100, frameWidthPercent),
+      base.gameplay.frameXPercent
+    ).toFixed(1)
+  );
+  const frameYPercent = Number(
+    clampNumber(
+      rawGameplay.frameYPercent,
+      0,
+      100 - Math.min(100, frameHeightPercent),
+      base.gameplay.frameYPercent
+    ).toFixed(1)
+  );
+
+  const validDisplayModes = new Set(GAMEPLAY_DISPLAY_MODES.map((m) => m.id));
+  const displayMode =
+    typeof rawGameplay.displayMode === 'string' &&
+    validDisplayModes.has(rawGameplay.displayMode)
+      ? rawGameplay.displayMode
+      : base.gameplay.displayMode;
+
+  const validCorners = new Set([
+    ...CORNER_PRESET_OPTIONS.map((c) => c.id),
+    'custom',
+  ]);
+  const cornerPreset =
+    typeof rawGameplay.cornerPreset === 'string' &&
+    validCorners.has(rawGameplay.cornerPreset)
+      ? rawGameplay.cornerPreset
+      : base.gameplay.cornerPreset;
+
+  const gameplayOpacity = Number(
+    clampNumber(rawGameplay.opacity, 0.1, 1, base.gameplay.opacity).toFixed(2)
+  );
+  const borderWidthPx = Math.round(
+    clampNumber(rawGameplay.borderWidthPx, 0, 12, base.gameplay.borderWidthPx)
+  );
+  const borderColor = sanitizeHexColor(
+    rawGameplay.borderColor,
+    base.gameplay.borderColor
+  );
+  const cornerRadiusPx = Math.round(
+    clampNumber(rawGameplay.cornerRadiusPx, 0, 36, base.gameplay.cornerRadiusPx)
+  );
+  const showSourceLabel =
+    typeof rawGameplay.showSourceLabel === 'boolean'
+      ? rawGameplay.showSourceLabel
+      : base.gameplay.showSourceLabel;
+
+  const layerOrder =
+    rawGameplay.layerOrder === 'GAMEPLAY_FRONT' ||
+    rawGameplay.layerOrder === 'GAMEPLAY_BEHIND'
+      ? rawGameplay.layerOrder
+      : base.gameplay.layerOrder;
+
+  const leaderboardVisible =
+    typeof rawGameplay.leaderboardVisible === 'boolean'
+      ? rawGameplay.leaderboardVisible
+      : base.gameplay.leaderboardVisible;
+
+  const leaderboardScale = Number(
+    clampNumber(
+      rawGameplay.leaderboardScale,
+      0.35,
+      1.25,
+      base.gameplay.leaderboardScale
+    ).toFixed(2)
+  );
+
+  const leaderboardCornerPreset =
+    typeof rawGameplay.leaderboardCornerPreset === 'string' &&
+    validCorners.has(rawGameplay.leaderboardCornerPreset)
+      ? rawGameplay.leaderboardCornerPreset
+      : base.gameplay.leaderboardCornerPreset;
+
+  const leaderboardBorderWidthPx = Math.round(
+    clampNumber(
+      rawGameplay.leaderboardBorderWidthPx,
+      0,
+      10,
+      base.gameplay.leaderboardBorderWidthPx
+    )
+  );
+  const leaderboardBorderColor = sanitizeHexColor(
+    rawGameplay.leaderboardBorderColor,
+    base.gameplay.leaderboardBorderColor
+  );
+  const leaderboardCornerRadiusPx = Math.round(
+    clampNumber(
+      rawGameplay.leaderboardCornerRadiusPx,
+      0,
+      28,
+      base.gameplay.leaderboardCornerRadiusPx
+    )
+  );
+
   return {
     canvas: {
       presetId,
@@ -487,12 +776,39 @@ export function sanitizeOverlayConfig(input, baseConfig = DEFAULT_OVERLAY_CONFIG
       showKillPoints,
       showPlacementPoints,
     },
+    gameplay: {
+      compositionMode,
+      captureActive,
+      sourceId,
+      sourceName,
+      sourceType,
+      sourceStatus,
+      sourceStatusMessage,
+      frameXPercent,
+      frameYPercent,
+      frameWidthPercent,
+      frameHeightPercent,
+      displayMode,
+      cornerPreset,
+      opacity: gameplayOpacity,
+      borderWidthPx,
+      borderColor,
+      cornerRadiusPx,
+      showSourceLabel,
+      layerOrder,
+      leaderboardVisible,
+      leaderboardScale,
+      leaderboardCornerPreset,
+      leaderboardBorderWidthPx,
+      leaderboardBorderColor,
+      leaderboardCornerRadiusPx,
+    },
   };
 }
 
 /**
  * Resets only the background configuration back to transparent defaults,
- * preserving canvas and scorecard customizations.
+ * preserving canvas, scorecard, and gameplay customizations.
  */
 export function resetBackgroundConfig(currentConfig) {
   const safe = sanitizeOverlayConfig(currentConfig);
@@ -504,7 +820,7 @@ export function resetBackgroundConfig(currentConfig) {
 
 /**
  * Resets only the scorecard/table customization back to defaults,
- * preserving canvas and uploaded background configuration.
+ * preserving canvas, uploaded background, and gameplay configuration.
  */
 export function resetScorecardConfig(currentConfig) {
   const safe = sanitizeOverlayConfig(currentConfig);
@@ -512,6 +828,267 @@ export function resetScorecardConfig(currentConfig) {
     ...safe,
     scorecard: { ...DEFAULT_OVERLAY_CONFIG.scorecard },
   };
+}
+
+/**
+ * Resets the gameplay & PiP layout configuration back to defaults,
+ * while optionally preserving active capture source connection if desired.
+ */
+export function resetGameplayConfig(currentConfig, options = {}) {
+  const safe = sanitizeOverlayConfig(currentConfig);
+  const preserveCaptureSource = Boolean(options?.preserveCaptureSource);
+  return {
+    ...safe,
+    scorecard: {
+      ...safe.scorecard,
+      offsetXPercent: 0,
+      offsetYPercent: 0,
+    },
+    gameplay: {
+      ...DEFAULT_OVERLAY_CONFIG.gameplay,
+      ...(preserveCaptureSource
+        ? {
+            captureActive: safe.gameplay.captureActive,
+            sourceId: safe.gameplay.sourceId,
+            sourceName: safe.gameplay.sourceName,
+            sourceType: safe.gameplay.sourceType,
+            sourceStatus: safe.gameplay.sourceStatus,
+            sourceStatusMessage: safe.gameplay.sourceStatusMessage,
+          }
+        : {}),
+    },
+  };
+}
+
+/**
+ * Applies a corner placement preset ('top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center')
+ * to either the 'gameplay' PiP frame or the 'leaderboard' scorecard stage.
+ */
+export function applyCornerPlacementPreset(
+  currentConfig,
+  presetId,
+  target = 'gameplay'
+) {
+  const safe = sanitizeOverlayConfig(currentConfig);
+  const validIds = new Set(CORNER_PRESET_OPTIONS.map((c) => c.id));
+  const resolvedPreset = validIds.has(presetId) ? presetId : 'center';
+
+  if (target === 'leaderboard') {
+    const scale = safe.gameplay.leaderboardScale;
+    const effW = safe.scorecard.widthPercent * scale;
+    const effH = safe.scorecard.heightPercent * scale;
+    const maxOffsetX = Math.min(45, Math.max(0, (100 - effW) / 2 - 2));
+    const maxOffsetY = Math.min(45, Math.max(0, (100 - effH) / 2 - 2));
+
+    let offsetX = 0;
+    let offsetY = 0;
+    if (resolvedPreset === 'top-left') {
+      offsetX = -Number(maxOffsetX.toFixed(1));
+      offsetY = -Number(maxOffsetY.toFixed(1));
+    } else if (resolvedPreset === 'top-right') {
+      offsetX = Number(maxOffsetX.toFixed(1));
+      offsetY = -Number(maxOffsetY.toFixed(1));
+    } else if (resolvedPreset === 'bottom-left') {
+      offsetX = -Number(maxOffsetX.toFixed(1));
+      offsetY = Number(maxOffsetY.toFixed(1));
+    } else if (resolvedPreset === 'bottom-right') {
+      offsetX = Number(maxOffsetX.toFixed(1));
+      offsetY = Number(maxOffsetY.toFixed(1));
+    }
+
+    return sanitizeOverlayConfig(
+      {
+        scorecard: {
+          ...safe.scorecard,
+          offsetXPercent: offsetX,
+          offsetYPercent: offsetY,
+        },
+        gameplay: {
+          ...safe.gameplay,
+          leaderboardCornerPreset: resolvedPreset,
+        },
+      },
+      safe
+    );
+  }
+
+  // Target === 'gameplay'
+  const w = safe.gameplay.frameWidthPercent;
+  const h = safe.gameplay.frameHeightPercent;
+  const margin = w >= 98 || h >= 98 ? 0 : 3;
+
+  let x = (100 - w) / 2;
+  let y = (100 - h) / 2;
+  if (resolvedPreset === 'top-left') {
+    x = margin;
+    y = margin;
+  } else if (resolvedPreset === 'top-right') {
+    x = Math.max(0, 100 - w - margin);
+    y = margin;
+  } else if (resolvedPreset === 'bottom-left') {
+    x = margin;
+    y = Math.max(0, 100 - h - margin);
+  } else if (resolvedPreset === 'bottom-right') {
+    x = Math.max(0, 100 - w - margin);
+    y = Math.max(0, 100 - h - margin);
+  }
+
+  return sanitizeOverlayConfig(
+    {
+      gameplay: {
+        ...safe.gameplay,
+        cornerPreset: resolvedPreset,
+        frameXPercent: Number(x.toFixed(1)),
+        frameYPercent: Number(y.toFixed(1)),
+      },
+    },
+    safe
+  );
+}
+
+/**
+ * Applies one of the 5 broadcast composition modes with tailored frame & leaderboard presets:
+ * - OVERLAY_ONLY
+ * - FULLSCREEN_GAMEPLAY
+ * - PICTURE_IN_PICTURE
+ * - LEADERBOARD_FOCUS
+ * - GAMEPLAY_ONLY
+ */
+export function applyCompositionModePreset(currentConfig, modeId) {
+  const safe = sanitizeOverlayConfig(currentConfig);
+  const validModes = new Set(OVERLAY_COMPOSITION_MODES.map((m) => m.id));
+  const mode = validModes.has(modeId) ? modeId : 'OVERLAY_ONLY';
+
+  if (mode === 'OVERLAY_ONLY') {
+    return sanitizeOverlayConfig(
+      {
+        scorecard: {
+          ...safe.scorecard,
+          offsetXPercent: 0,
+          offsetYPercent: 0,
+        },
+        gameplay: {
+          ...safe.gameplay,
+          compositionMode: 'OVERLAY_ONLY',
+          leaderboardVisible: true,
+          leaderboardScale: 1,
+          leaderboardCornerPreset: 'center',
+          layerOrder: 'GAMEPLAY_BEHIND',
+        },
+      },
+      safe
+    );
+  }
+
+  if (mode === 'FULLSCREEN_GAMEPLAY') {
+    // Fullscreen gameplay (100%x100%) with leaderboard docked in a configurable corner (default top-right)
+    const corner =
+      safe.gameplay.leaderboardCornerPreset &&
+      safe.gameplay.leaderboardCornerPreset !== 'center' &&
+      safe.gameplay.leaderboardCornerPreset !== 'custom'
+        ? safe.gameplay.leaderboardCornerPreset
+        : 'top-right';
+    const nextWithScale = sanitizeOverlayConfig(
+      {
+        gameplay: {
+          ...safe.gameplay,
+          compositionMode: 'FULLSCREEN_GAMEPLAY',
+          frameXPercent: 0,
+          frameYPercent: 0,
+          frameWidthPercent: 100,
+          frameHeightPercent: 100,
+          cornerPreset: 'center',
+          borderWidthPx: 0,
+          cornerRadiusPx: 0,
+          layerOrder: 'GAMEPLAY_BEHIND',
+          leaderboardVisible: true,
+          leaderboardScale: 0.62,
+          leaderboardCornerPreset: corner,
+        },
+      },
+      safe
+    );
+    return applyCornerPlacementPreset(nextWithScale, corner, 'leaderboard');
+  }
+
+  if (mode === 'PICTURE_IN_PICTURE') {
+    // Gameplay in a movable, resizable PiP frame (38%x38% bottom-right) + prominent leaderboard
+    const pipCorner =
+      safe.gameplay.cornerPreset &&
+      safe.gameplay.cornerPreset !== 'custom' &&
+      safe.gameplay.cornerPreset !== 'center'
+        ? safe.gameplay.cornerPreset
+        : 'bottom-right';
+    const nextPip = sanitizeOverlayConfig(
+      {
+        scorecard: {
+          ...safe.scorecard,
+          offsetXPercent: -4,
+          offsetYPercent: -4,
+        },
+        gameplay: {
+          ...safe.gameplay,
+          compositionMode: 'PICTURE_IN_PICTURE',
+          frameWidthPercent: 38,
+          frameHeightPercent: 38,
+          borderWidthPx: Math.max(2, safe.gameplay.borderWidthPx || 2),
+          cornerRadiusPx: Math.max(8, safe.gameplay.cornerRadiusPx || 8),
+          layerOrder: 'GAMEPLAY_FRONT',
+          leaderboardVisible: true,
+          leaderboardScale: 0.9,
+          leaderboardCornerPreset: 'custom',
+        },
+      },
+      safe
+    );
+    return applyCornerPlacementPreset(nextPip, pipCorner, 'gameplay');
+  }
+
+  if (mode === 'LEADERBOARD_FOCUS') {
+    // Leaderboard prominent (96% scale) with compact secondary gameplay frame in bottom-right
+    const focusPip = sanitizeOverlayConfig(
+      {
+        scorecard: {
+          ...safe.scorecard,
+          offsetXPercent: 0,
+          offsetYPercent: -3,
+        },
+        gameplay: {
+          ...safe.gameplay,
+          compositionMode: 'LEADERBOARD_FOCUS',
+          frameWidthPercent: 28,
+          frameHeightPercent: 28,
+          borderWidthPx: Math.max(2, safe.gameplay.borderWidthPx || 2),
+          cornerRadiusPx: Math.max(6, safe.gameplay.cornerRadiusPx || 6),
+          layerOrder: 'GAMEPLAY_FRONT',
+          leaderboardVisible: true,
+          leaderboardScale: 0.96,
+          leaderboardCornerPreset: 'center',
+        },
+      },
+      safe
+    );
+    return applyCornerPlacementPreset(focusPip, 'bottom-right', 'gameplay');
+  }
+
+  // GAMEPLAY_ONLY: hide leaderboard without stopping gameplay capture
+  return sanitizeOverlayConfig(
+    {
+      gameplay: {
+        ...safe.gameplay,
+        compositionMode: 'GAMEPLAY_ONLY',
+        frameXPercent: 0,
+        frameYPercent: 0,
+        frameWidthPercent: 100,
+        frameHeightPercent: 100,
+        cornerPreset: 'center',
+        borderWidthPx: 0,
+        cornerRadiusPx: 0,
+        leaderboardVisible: false,
+      },
+    },
+    safe
+  );
 }
 
 /**
@@ -753,8 +1330,9 @@ export function checkOverlayLayoutFit(options = {}) {
   );
 
   // Check if scorecard overflows canvas due to X/Y offset or tiny dimensions
-  const halfWidthMargin = (100 - scorecard.widthPercent) / 2;
-  const halfHeightMargin = (100 - scorecard.heightPercent) / 2;
+  const lbScale = config.gameplay?.leaderboardScale || 1;
+  const halfWidthMargin = (100 - scorecard.widthPercent * lbScale) / 2;
+  const halfHeightMargin = (100 - scorecard.heightPercent * lbScale) / 2;
   const offsetClipsX = Math.abs(scorecard.offsetXPercent) > halfWidthMargin + 1;
   const offsetClipsY =
     Math.abs(scorecard.offsetYPercent) > halfHeightMargin + 1;
@@ -810,7 +1388,7 @@ export function computeOverlayCssVariables(
   viewMode = 'MATCH'
 ) {
   const config = sanitizeOverlayConfig(rawConfig);
-  const { canvas, background, scorecard } = config;
+  const { canvas, background, scorecard, gameplay } = config;
   const fitReport = checkOverlayLayoutFit({
     overlayConfig: config,
     rowsPerColumn,
@@ -828,6 +1406,10 @@ export function computeOverlayCssVariables(
       : background.scaleMode === 'contain'
       ? 'contain'
       : 'cover';
+
+  const displayEntry =
+    GAMEPLAY_DISPLAY_MODES.find((m) => m.id === gameplay.displayMode) ||
+    GAMEPLAY_DISPLAY_MODES[0];
 
   const scaledHeaderFont = Math.max(
     11,
@@ -854,6 +1436,14 @@ export function computeOverlayCssVariables(
     Number((canvas.paddingPx * refScale).toFixed(2))
   );
 
+  const showGameplayLayer = gameplay.compositionMode !== 'OVERLAY_ONLY';
+  const showLeaderboardLayer =
+    gameplay.compositionMode !== 'GAMEPLAY_ONLY' &&
+    Boolean(gameplay.leaderboardVisible);
+
+  const gameplayZIndex = gameplay.layerOrder === 'GAMEPLAY_FRONT' ? 20 : 4;
+  const leaderboardZIndex = 10;
+
   return {
     cssVars: {
       '--ov-canvas-width': `${canvas.width}px`,
@@ -864,6 +1454,13 @@ export function computeOverlayCssVariables(
       '--ov-table-height': `${scorecard.heightPercent}%`,
       '--ov-offset-x': `${scorecard.offsetXPercent}%`,
       '--ov-offset-y': `${scorecard.offsetYPercent}%`,
+      '--ov-lb-scale': String(gameplay.leaderboardScale),
+      '--ov-lb-z-index': String(leaderboardZIndex),
+      '--ov-lb-border':
+        gameplay.leaderboardBorderWidthPx > 0
+          ? `${Math.round(gameplay.leaderboardBorderWidthPx * refScale)}px solid ${gameplay.leaderboardBorderColor}`
+          : 'none',
+      '--ov-lb-radius': `${Math.round(gameplay.leaderboardCornerRadiusPx * refScale)}px`,
       '--ov-col-gap': `${scaledColGap}px`,
       '--ov-row-gap': `${scaledRowGap}px`,
       '--ov-row-height':
@@ -891,10 +1488,30 @@ export function computeOverlayCssVariables(
       '--ov-bg-opacity': String(background.opacity),
       '--ov-bg-size': bgSizeCss,
       '--ov-bg-position': posEntry.cssValue,
+      '--ov-gameplay-x': `${gameplay.frameXPercent}%`,
+      '--ov-gameplay-y': `${gameplay.frameYPercent}%`,
+      '--ov-gameplay-w': `${gameplay.frameWidthPercent}%`,
+      '--ov-gameplay-h': `${gameplay.frameHeightPercent}%`,
+      '--ov-gameplay-fit': displayEntry.cssObjectFit,
+      '--ov-gameplay-opacity': String(gameplay.opacity),
+      '--ov-gameplay-border':
+        gameplay.borderWidthPx > 0
+          ? `${Math.round(gameplay.borderWidthPx * refScale)}px solid ${gameplay.borderColor}`
+          : 'none',
+      '--ov-gameplay-radius': `${Math.round(gameplay.cornerRadiusPx * refScale)}px`,
+      '--ov-gameplay-z-index': String(gameplayZIndex),
       '--overlay-rows-per-col': String(rowsPerColumn),
     },
     config,
     fitReport,
+    compositionState: {
+      compositionMode: gameplay.compositionMode,
+      showGameplayLayer,
+      showLeaderboardLayer,
+      gameplayZIndex,
+      leaderboardZIndex,
+      gameplayObjectFit: displayEntry.cssObjectFit,
+    },
   };
 }
 

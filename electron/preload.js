@@ -29,6 +29,10 @@ const IPC_CHANNELS = Object.freeze({
   WINDOW_FULLSCREEN_TOGGLE: 'window:fullscreen-toggle',
   WINDOW_CLOSE: 'window:close',
 
+  // Phase 3 Gameplay Window / Desktop Capture Invoke Channels
+  GET_CAPTURE_SOURCES: 'capture:get-sources',
+  GET_CAPTURE_STATUS: 'capture:get-status',
+
   // Phase 2 Authoritative Match Invoke Channels
   GET_MATCH_STATE: 'match:get-state',
   SELECT_TEAM: 'match:select-team',
@@ -70,6 +74,8 @@ const ALLOWED_INVOKE = new Set([
   IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE,
   IPC_CHANNELS.WINDOW_FULLSCREEN_TOGGLE,
   IPC_CHANNELS.WINDOW_CLOSE,
+  IPC_CHANNELS.GET_CAPTURE_SOURCES,
+  IPC_CHANNELS.GET_CAPTURE_STATUS,
   IPC_CHANNELS.GET_MATCH_STATE,
   'match:set-active-game',
   'match:update-broadcast-meta',
@@ -168,6 +174,11 @@ const broadcastControllerAPI = Object.freeze({
   toggleFullscreenWindow: () =>
     safeInvoke(IPC_CHANNELS.WINDOW_FULLSCREEN_TOGGLE),
   closeWindow: () => safeInvoke(IPC_CHANNELS.WINDOW_CLOSE),
+
+  // Phase 3 Gameplay Window / Desktop Capture Methods
+  getCaptureSources: (options) =>
+    safeInvoke(IPC_CHANNELS.GET_CAPTURE_SOURCES, options || {}),
+  getCaptureStatus: () => safeInvoke(IPC_CHANNELS.GET_CAPTURE_STATUS),
 
   // Phase 2 & Phase 3 Authoritative Match & CSV Methods
   getMatchState: () => safeInvoke(IPC_CHANNELS.GET_MATCH_STATE),

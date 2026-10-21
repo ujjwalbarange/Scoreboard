@@ -1,8 +1,12 @@
 import React, { useRef, useState } from 'react';
 import {
+  CORNER_PRESET_OPTIONS,
+  GAMEPLAY_DISPLAY_MODES,
+  GAMEPLAY_LAYER_ORDER_OPTIONS,
   OVERLAY_ACCENT_PRESETS,
   OVERLAY_BACKGROUND_POSITIONS,
   OVERLAY_BACKGROUND_SCALE_MODES,
+  OVERLAY_COMPOSITION_MODES,
   OVERLAY_RESOLUTION_PRESETS,
   checkOverlayLayoutFit,
   sanitizeOverlayConfig,
@@ -12,27 +16,27 @@ import {
 /**
  * Broadcast Overlay Customization Editor Panel
  * Phase 3 Addendum: Responsive & Fully Customizable Broadcast Overlay Editor
- *
- * Provides real-time controls for:
- * 1. Responsive Overlay Canvas (1920x1080, 1600x900, 1280x720, and Custom Dimensions)
- * 2. Background Image Upload (PNG/JPG/WebP, opacity, cover/contain/stretch, position, Remove & Restore Default)
- * 3. Independent Scorecard/Table Customization (width/height, X/Y position, row height & spacing,
- *    column gap, header/team/score font sizes, opacity/accent colors, visibility toggles, and independent reset)
+ * + Gameplay Window Integration & Picture-in-Picture Broadcast Mode
  */
 export default function OverlayEditorPanel({
   overlayConfig,
   overlayViewMode = 'MATCH',
   onUpdateOverlayConfig,
+  onSelectCompositionMode,
+  onApplyCornerPreset,
   onUploadBackground,
   onResetBackground,
   onResetScorecard,
+  onResetGameplay,
   onResetAll,
   onApplyWindowBounds,
+  onOpenGameplayWindow,
+  onStopGameplayCapture,
 }) {
   const config = sanitizeOverlayConfig(overlayConfig);
-  const { canvas, background, scorecard } = config;
+  const { canvas, background, scorecard, gameplay } = config;
 
-  const [activeSection, setActiveSection] = useState('ALL'); // 'ALL' | 'CANVAS' | 'BACKGROUND' | 'SCORECARD'
+  const [activeSection, setActiveSection] = useState('ALL'); // 'ALL' | 'CANVAS' | 'BACKGROUND' | 'SCORECARD' | 'GAMEPLAY'
   const [uploadError, setUploadError] = useState('');
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
@@ -65,6 +69,15 @@ export default function OverlayEditorPanel({
     onUpdateOverlayConfig?.({
       scorecard: {
         ...scorecard,
+        ...patch,
+      },
+    });
+  };
+
+  const updateGameplay = (patch) => {
+    onUpdateOverlayConfig?.({
+      gameplay: {
+        ...gameplay,
         ...patch,
       },
     });
@@ -212,6 +225,8 @@ export default function OverlayEditorPanel({
     activeSection === 'ALL' || activeSection === 'BACKGROUND';
   const showScorecardSection =
     activeSection === 'ALL' || activeSection === 'SCORECARD';
+  const showGameplaySection =
+    activeSection === 'ALL' || activeSection === 'GAMEPLAY';
 
   return (
     <div
@@ -220,12 +235,13 @@ export default function OverlayEditorPanel({
     >
       {/* Editor Top Bar & Section Filter */}
       <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {[
             { id: 'ALL', label: 'All Controls' },
             { id: 'CANVAS', label: '1. Canvas' },
             { id: 'BACKGROUND', label: '2. Background' },
             { id: 'SCORECARD', label: '3. Scorecard' },
+            { id: 'GAMEPLAY', label: '4. Gameplay & PiP' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -996,6 +1012,471 @@ export default function OverlayEditorPanel({
               />
               <span>Place Pts (PP)</span>
             </label>
+          </div>
+        </section>
+      )}
+
+      {/* ===================================================================== */}
+      {/* 4. GAMEPLAY WINDOW INTEGRATION & PICTURE-IN-PICTURE BROADCAST MODE    */}
+      {/* ===================================================================== */}
+      {showGameplaySection && (
+        <section
+          aria-label="Gameplay and Picture-in-Picture Composition Controls"
+          data-testid="editor-gameplay-section"
+          className="rounded border border-slate-800/90 bg-[#0d1421] p-2.5 space-y-2.5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-300">
+                4. Gameplay + Leaderboard Composition &amp; PiP Layout
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                Compose live gameplay capture with the transparent leaderboard
+                in Fullscreen, Picture-in-Picture, or Focus modes.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {onOpenGameplayWindow && (
+                <button
+                  type="button"
+                  data-testid="editor-open-gameplay-window-btn"
+                  onClick={onOpenGameplayWindow}
+                  className="rounded bg-cyan-400 px-2.5 py-1 text-[11px] font-bold text-slate-950 hover:bg-cyan-300 transition-colors whitespace-nowrap shrink-0"
+                >
+                  Gameplay Window
+                </button>
+              )}
+              {gameplay.captureActive && onStopGameplayCapture && (
+                <button
+                  type="button"
+                  data-testid="editor-stop-gameplay-btn"
+                  onClick={onStopGameplayCapture}
+                  className="rounded border border-rose-500/40 bg-rose-950/40 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-900/60 transition-colors whitespace-nowrap shrink-0"
+                >
+                  Stop Capture
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="reset-gameplay-btn"
+                onClick={onResetGameplay}
+                className="rounded border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:border-cyan-400/60 hover:text-white transition-colors whitespace-nowrap shrink-0"
+              >
+                Reset Layout
+              </button>
+            </div>
+          </div>
+
+          {/* Composition Mode Selector */}
+          <div>
+            <span className="block text-[11px] font-semibold text-slate-300 mb-1">
+              Composition Mode:
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {OVERLAY_COMPOSITION_MODES.map((mode) => {
+                const active = gameplay.compositionMode === mode.id;
+                return (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    data-testid={`composition-mode-btn-${mode.id}`}
+                    onClick={() => onSelectCompositionMode?.(mode.id)}
+                    aria-pressed={active}
+                    title={mode.description}
+                    className={`rounded border px-2.5 py-1.5 text-left transition-colors whitespace-nowrap ${
+                      active
+                        ? 'border-cyan-400 bg-cyan-950/60 text-cyan-200 font-bold'
+                        : 'border-slate-700 bg-slate-900 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <div className="text-[11px]">{mode.label}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Gameplay Frame Position & Dimensions */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 border-t border-slate-800/80">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="gameplay-width-slider"
+                  className="text-[11px] font-medium text-slate-300"
+                >
+                  Gameplay W:
+                </label>
+                <span className="deck-mono-font text-[11px] font-semibold text-cyan-300">
+                  {gameplay.frameWidthPercent}%
+                </span>
+              </div>
+              <input
+                id="gameplay-width-slider"
+                data-testid="gameplay-width-slider"
+                type="range"
+                min="15"
+                max="100"
+                step="1"
+                value={gameplay.frameWidthPercent}
+                onChange={(e) =>
+                  updateGameplay({
+                    frameWidthPercent: Number(e.target.value),
+                    cornerPreset: 'custom',
+                  })
+                }
+                className="w-full accent-cyan-400 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="gameplay-height-slider"
+                  className="text-[11px] font-medium text-slate-300"
+                >
+                  Gameplay H:
+                </label>
+                <span className="deck-mono-font text-[11px] font-semibold text-cyan-300">
+                  {gameplay.frameHeightPercent}%
+                </span>
+              </div>
+              <input
+                id="gameplay-height-slider"
+                data-testid="gameplay-height-slider"
+                type="range"
+                min="15"
+                max="100"
+                step="1"
+                value={gameplay.frameHeightPercent}
+                onChange={(e) =>
+                  updateGameplay({
+                    frameHeightPercent: Number(e.target.value),
+                    cornerPreset: 'custom',
+                  })
+                }
+                className="w-full accent-cyan-400 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="gameplay-x-slider"
+                  className="text-[11px] font-medium text-slate-300"
+                >
+                  Gameplay X:
+                </label>
+                <span className="deck-mono-font text-[11px] font-semibold text-cyan-300">
+                  {gameplay.frameXPercent}%
+                </span>
+              </div>
+              <input
+                id="gameplay-x-slider"
+                data-testid="gameplay-x-slider"
+                type="range"
+                min="0"
+                max={Math.max(0, 100 - gameplay.frameWidthPercent)}
+                step="1"
+                value={gameplay.frameXPercent}
+                onChange={(e) =>
+                  updateGameplay({
+                    frameXPercent: Number(e.target.value),
+                    cornerPreset: 'custom',
+                  })
+                }
+                className="w-full accent-cyan-400 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="gameplay-y-slider"
+                  className="text-[11px] font-medium text-slate-300"
+                >
+                  Gameplay Y:
+                </label>
+                <span className="deck-mono-font text-[11px] font-semibold text-cyan-300">
+                  {gameplay.frameYPercent}%
+                </span>
+              </div>
+              <input
+                id="gameplay-y-slider"
+                data-testid="gameplay-y-slider"
+                type="range"
+                min="0"
+                max={Math.max(0, 100 - gameplay.frameHeightPercent)}
+                step="1"
+                value={gameplay.frameYPercent}
+                onChange={(e) =>
+                  updateGameplay({
+                    frameYPercent: Number(e.target.value),
+                    cornerPreset: 'custom',
+                  })
+                }
+                className="w-full accent-cyan-400 cursor-pointer"
+              />
+            </div>
+          </div>
+
+          {/* Display Fit Mode & Layer Order */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 border-t border-slate-800/80">
+            <div>
+              <label
+                htmlFor="gameplay-display-mode-select"
+                className="block text-[11px] font-medium text-slate-300 mb-1"
+              >
+                Gameplay Display Mode (Aspect Ratio):
+              </label>
+              <select
+                id="gameplay-display-mode-select"
+                data-testid="gameplay-display-mode-select"
+                value={gameplay.displayMode}
+                onChange={(e) =>
+                  updateGameplay({ displayMode: e.target.value })
+                }
+                className="w-full rounded border border-slate-700 bg-[#080c14] px-2 py-1 text-xs font-semibold text-white focus:border-cyan-400 focus:outline-none"
+              >
+                {GAMEPLAY_DISPLAY_MODES.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label
+                htmlFor="gameplay-layer-order-select"
+                className="block text-[11px] font-medium text-slate-300 mb-1"
+              >
+                Layer Order (Z-Index):
+              </label>
+              <select
+                id="gameplay-layer-order-select"
+                data-testid="gameplay-layer-order-select"
+                value={gameplay.layerOrder}
+                onChange={(e) => updateGameplay({ layerOrder: e.target.value })}
+                className="w-full rounded border border-slate-700 bg-[#080c14] px-2 py-1 text-xs font-semibold text-white focus:border-cyan-400 focus:outline-none"
+              >
+                {GAMEPLAY_LAYER_ORDER_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Corner Placement Presets (Gameplay Frame & Leaderboard) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 border-t border-slate-800/80">
+            <div>
+              <span className="block text-[11px] font-medium text-slate-300 mb-1">
+                Gameplay PiP Corner Placement Preset:
+              </span>
+              <div className="flex flex-wrap items-center gap-1">
+                {CORNER_PRESET_OPTIONS.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    data-testid={`gameplay-corner-preset-${c.id}`}
+                    onClick={() => onApplyCornerPreset?.(c.id, 'gameplay')}
+                    className={`rounded border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                      gameplay.cornerPreset === c.id
+                        ? 'border-cyan-400 bg-cyan-950/60 text-cyan-200'
+                        : 'border-slate-700 bg-slate-900 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="block text-[11px] font-medium text-slate-300 mb-1">
+                Leaderboard Corner Placement Preset:
+              </span>
+              <div className="flex flex-wrap items-center gap-1">
+                {CORNER_PRESET_OPTIONS.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    data-testid={`leaderboard-corner-preset-${c.id}`}
+                    onClick={() => onApplyCornerPreset?.(c.id, 'leaderboard')}
+                    className={`rounded border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                      gameplay.leaderboardCornerPreset === c.id
+                        ? 'border-amber-400 bg-amber-950/60 text-amber-200'
+                        : 'border-slate-700 bg-slate-900 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Leaderboard Scale & Visibility + PiP Frame Styling */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 border-t border-slate-800/80">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="leaderboard-scale-slider"
+                  className="text-[11px] font-medium text-slate-300"
+                >
+                  Leaderboard Scale:
+                </label>
+                <span className="deck-mono-font text-[11px] font-semibold text-amber-300">
+                  {Math.round(gameplay.leaderboardScale * 100)}%
+                </span>
+              </div>
+              <input
+                id="leaderboard-scale-slider"
+                data-testid="leaderboard-scale-slider"
+                type="range"
+                min="0.35"
+                max="1.25"
+                step="0.05"
+                value={gameplay.leaderboardScale}
+                onChange={(e) =>
+                  updateGameplay({ leaderboardScale: Number(e.target.value) })
+                }
+                className="w-full accent-amber-400 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="gameplay-opacity-slider"
+                  className="text-[11px] font-medium text-slate-300"
+                >
+                  Gameplay Opacity:
+                </label>
+                <span className="deck-mono-font text-[11px] font-semibold text-cyan-300">
+                  {Math.round(gameplay.opacity * 100)}%
+                </span>
+              </div>
+              <input
+                id="gameplay-opacity-slider"
+                data-testid="gameplay-opacity-slider"
+                type="range"
+                min="0.1"
+                max="1"
+                step="0.05"
+                value={gameplay.opacity}
+                onChange={(e) =>
+                  updateGameplay({ opacity: Number(e.target.value) })
+                }
+                className="w-full accent-cyan-400 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="gameplay-border-slider"
+                  className="text-[11px] font-medium text-slate-300"
+                >
+                  PiP Border:
+                </label>
+                <span className="deck-mono-font text-[11px] font-semibold text-cyan-300">
+                  {gameplay.borderWidthPx}px
+                </span>
+              </div>
+              <input
+                id="gameplay-border-slider"
+                data-testid="gameplay-border-slider"
+                type="range"
+                min="0"
+                max="12"
+                step="1"
+                value={gameplay.borderWidthPx}
+                onChange={(e) =>
+                  updateGameplay({ borderWidthPx: Number(e.target.value) })
+                }
+                className="w-full accent-cyan-400 cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="gameplay-radius-slider"
+                  className="text-[11px] font-medium text-slate-300"
+                >
+                  Corner Radius:
+                </label>
+                <span className="deck-mono-font text-[11px] font-semibold text-cyan-300">
+                  {gameplay.cornerRadiusPx}px
+                </span>
+              </div>
+              <input
+                id="gameplay-radius-slider"
+                data-testid="gameplay-radius-slider"
+                type="range"
+                min="0"
+                max="36"
+                step="2"
+                value={gameplay.cornerRadiusPx}
+                onChange={(e) =>
+                  updateGameplay({ cornerRadiusPx: Number(e.target.value) })
+                }
+                className="w-full accent-cyan-400 cursor-pointer"
+              />
+            </div>
+          </div>
+
+          {/* Toggles: Leaderboard Visibility, Source Badge, and PiP Border Color */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1.5 border-t border-slate-800/80">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  data-testid="toggle-leaderboard-visible"
+                  checked={Boolean(gameplay.leaderboardVisible)}
+                  onChange={(e) =>
+                    updateGameplay({ leaderboardVisible: e.target.checked })
+                  }
+                  className="rounded border-slate-700 bg-slate-900 text-cyan-400"
+                />
+                <span>Show Leaderboard Overlay</span>
+              </label>
+
+              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  data-testid="toggle-gameplay-source-label"
+                  checked={Boolean(gameplay.showSourceLabel)}
+                  onChange={(e) =>
+                    updateGameplay({ showSourceLabel: e.target.checked })
+                  }
+                  className="rounded border-slate-700 bg-slate-900 text-cyan-400"
+                />
+                <span>Show Live Source Badge</span>
+              </label>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-300">PiP Border Color:</span>
+              {OVERLAY_ACCENT_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => updateGameplay({ borderColor: preset.color })}
+                  title={preset.label}
+                  className={`h-4 w-4 rounded-full border ${
+                    gameplay.borderColor.toLowerCase() ===
+                    preset.color.toLowerCase()
+                      ? 'border-white scale-110'
+                      : 'border-slate-700'
+                  }`}
+                  style={{ backgroundColor: preset.color }}
+                />
+              ))}
+            </div>
           </div>
         </section>
       )}

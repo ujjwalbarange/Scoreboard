@@ -31,6 +31,9 @@ export default function Header({
   onToggleOverlay,
   onCloseOverlay,
   onReopenOverlay,
+  gameplayCaptureActive = false,
+  gameplayCompositionMode = 'OVERLAY_ONLY',
+  onOpenGameplayWindow,
   windowState = { isMaximized: false, isFullScreen: false },
   onMinimizeWindow,
   onToggleMaximizeWindow,
@@ -223,6 +226,25 @@ export default function Header({
             }`}
           >
             {audioEnabled ? 'Audio: On' : 'Audio: Muted'}
+          </button>
+
+          <button
+            type="button"
+            data-testid="gameplay-window-btn"
+            onClick={onOpenGameplayWindow}
+            className={`flex items-center gap-1.5 rounded border px-2.5 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              gameplayCaptureActive || gameplayCompositionMode !== 'OVERLAY_ONLY'
+                ? 'border-cyan-400 bg-cyan-950/70 text-cyan-200 hover:bg-cyan-900/80'
+                : 'border-cyan-500/40 bg-slate-900 text-cyan-300 hover:border-cyan-400 hover:text-white'
+            }`}
+          >
+            {gameplayCaptureActive && (
+              <span
+                aria-hidden="true"
+                className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"
+              />
+            )}
+            <span>Gameplay Window</span>
           </button>
 
           <button

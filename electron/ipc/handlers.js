@@ -556,6 +556,28 @@ export function registerIpcHandlers(ipcMain, windowManager, options = {}) {
   });
 
   // =========================================================================
+  // Phase 3 Gameplay Window / Desktop Capture Handlers
+  // =========================================================================
+
+  ipcMain.handle(IPC_CHANNELS.GET_CAPTURE_STATUS, async () => {
+    return getDesktopCapturePermissionStatus(
+      options.systemPreferences,
+      options.desktopCapturer
+    );
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.GET_CAPTURE_SOURCES,
+    async (_event, queryOpts) => {
+      return listDesktopCaptureSources(
+        options.desktopCapturer,
+        options.systemPreferences,
+        queryOpts
+      );
+    }
+  );
+
+  // =========================================================================
   // Phase 2 Authoritative Match Engine & CSV Handlers
   // =========================================================================
 
@@ -655,3 +677,232 @@ export function registerIpcHandlers(ipcMain, windowManager, options = {}) {
     return { ok: true, matches };
   });
 }
+
+/**
+ * Checks OS screen recording permission status safely across platforms.
+ */
+export function getDesktopCapturePermissionStatus(
+  systemPreferencesApi,
+  desktopCapturerApi
+) {
+  const hasDesktopCapturer = Boolean(
+    desktopCapturerApi && typeof desktopCapturerApi.getSources === 'function'
+  );
+  let permissionStatus = 'granted';
+  try {
+    if (
+      systemPreferencesApi &&
+      typeof systemPreferencesApi.getMediaAccessStatus === 'function'
+    ) {
+      const status = systemPreferencesApi.getMediaAccessStatus('screen');
+      if (typeof status === 'string' && status.trim()) {
+        permissionStatus = status.trim().toLowerCase();
+      }
+    }
+  } catch {
+    permissionStatus = 'unknown';
+  }
+
+  const denied =
+    permissionStatus === 'denied' || permissionStatus === 'restricted';
+
+  return {
+    ok: !denied && hasDesktopCapturer,
+    runtime: hasDesktopCapturer ? 'electron-desktop-capturer' : 'browser-media',
+    hasDesktopCapturer,
+    permissionStatus,
+    canCapture: !denied,
+    platform: process.platform,
+    message: denied
+      ? 'OS Screen Recording permission is denied. Enable Screen Recording permission for this application in OS System Settings, then click Refresh Sources.'
+      : hasDesktopCapturer
+      ? 'Electron desktopCapturer is ready to enumerate application windows and displays.'
+      : 'Running outside Electron main process; use standard browser getDisplayMedia screen/window sharing.',
+  };
+}
+
+/**
+ * Enumerates available desktop windows and displays using Electron desktopCapturer,
+ * returning sanitized metadata, thumbnails, and availability diagnostics.
+ */
+export async function listDesktopCaptureSources(
+  desktopCapturerApi,
+  systemPreferencesApi,
+  queryOpts = {}
+) {
+  const statusReport = getDesktopCapturePermissionStatus(
+    systemPreferencesApi,
+    desktopCapturerApi
+  );
+
+  if (
+    statusReport.permissionStatus === 'denied' ||
+    statusReport.permissionStatus === 'restricted'
+  ) {
+    return {
+      ok: false,
+      permissionStatus: statusReport.permissionStatus,
+      runtime: statusReport.runtime,
+      error: statusReport.message,
+      sources: [],
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  if (!statusReport.hasDesktopCapturer) {
+    return {
+      ok: false,
+      permissionStatus: statusReport.permissionStatus,
+      runtime: 'browser-media',
+      error:
+        'Electron desktopCapturer is not active in this runtime. Use the Browser Window / Screen Share picker (getDisplayMedia) to select a live gameplay window or display.',
+      sources: [],
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  try {
+    const thumbWidth =
+      typeof queryOpts?.thumbnailWidth === 'number'
+        ? Math.min(640, Math.max(120, Math.round(queryOpts.thumbnailWidth)))
+        : 320;
+    const thumbHeight =
+      typeof queryOpts?.thumbnailHeight === 'number'
+        ? Math.min(360, Math.max(68, Math.round(queryOpts.thumbnailHeight)))
+        : 180;
+
+    const rawSources = await desktopCapturerApi.getSources({
+      types: ['window', 'screen'],
+      thumbnailSize: { width: thumbWidth, height: thumbHeight },
+      fetchWindowIcons: true,
+    });
+
+    const sanitizedSources = (Array.isArray(rawSources) ? rawSources : [])
+      .map((src) => {
+        const id = String(src?.id || '').trim();
+        const name = String(src?.name || 'Untitled Source').trim();
+        if (!id) return null;
+
+        const kind = id.startsWith('screen:') ? 'screen' : 'window';
+        let thumbnailDataUrl = null;
+        let thumbWidthPx = 0;
+        let thumbHeightPx = 0;
+        let isEmptyThumb = true;
+
+        try {
+          if (src.thumbnail) {
+            isEmptyThumb =
+              typeof src.thumbnail.isEmpty === 'function'
+                ? Boolean(src.thumbnail.isEmpty())
+                : false;
+            const size =
+              typeof src.thumbnail.getSize === 'function'
+                ? src.thumbnail.getSize()
+                : null;
+            if (size) {
+              thumbWidthPx = Number(size.width || 0);
+              thumbHeightPx = Number(size.height || 0);
+            }
+            if (
+              !isEmptyThumb &&
+              typeof src.thumbnail.toDataURL === 'function'
+            ) {
+              const url = src.thumbnail.toDataURL();
+              if (
+                typeof url === 'string' &&
+                url.startsWith('data:image/') &&
+                url.length > 32
+              ) {
+                thumbnailDataUrl = url;
+              }
+            }
+          }
+        } catch {
+          thumbnailDataUrl = null;
+        }
+
+        let appIconDataUrl = null;
+        try {
+          if (
+            src.appIcon &&
+            typeof src.appIcon.isEmpty === 'function' &&
+            !src.appIcon.isEmpty() &&
+            typeof src.appIcon.toDataURL === 'function'
+          ) {
+            const iconUrl = src.appIcon.toDataURL();
+            if (
+              typeof iconUrl === 'string' &&
+              iconUrl.startsWith('data:image/') &&
+              iconUrl.length > 32
+            ) {
+              appIconDataUrl = iconUrl;
+            }
+          }
+        } catch {
+          appIconDataUrl = null;
+        }
+
+        const isSelfWindow =
+          /Esports Broadcast Controller/i.test(name) ||
+          /Broadcast Overlay Viewport/i.test(name) ||
+          /Operator Control Deck/i.test(name);
+
+        const appearsMinimized =
+          kind === 'window' &&
+          (!thumbnailDataUrl || thumbWidthPx === 0 || thumbHeightPx === 0);
+
+        return {
+          id,
+          name,
+          kind,
+          displayId: src.display_id ? String(src.display_id) : null,
+          thumbnailDataUrl,
+          appIconDataUrl,
+          thumbnailSize: { width: thumbWidthPx, height: thumbHeightPx },
+          isSelfWindow,
+          captureAvailable: !appearsMinimized,
+          unavailableReason: appearsMinimized
+            ? 'Window appears minimized or occluded by OS window manager. Restore the window on desktop to capture its live video feed.'
+            : isSelfWindow
+            ? 'This is a Broadcast Controller window. Capturing the overlay itself may cause a hall-of-mirrors loop.'
+            : null,
+        };
+      })
+      .filter(Boolean);
+
+    // Sort: non-self capturable windows & screens first, then minimized windows, then self windows
+    sanitizedSources.sort((a, b) => {
+      if (a.isSelfWindow !== b.isSelfWindow) {
+        return a.isSelfWindow ? 1 : -1;
+      }
+      if (a.captureAvailable !== b.captureAvailable) {
+        return a.captureAvailable ? -1 : 1;
+      }
+      if (a.kind !== b.kind) {
+        return a.kind === 'window' ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    return {
+      ok: true,
+      permissionStatus: statusReport.permissionStatus,
+      runtime: 'electron-desktop-capturer',
+      sources: sanitizedSources,
+      fetchedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      permissionStatus: statusReport.permissionStatus,
+      runtime: 'electron-desktop-capturer',
+      error:
+        err instanceof Error
+          ? `Failed to enumerate desktop capture sources: ${err.message}`
+          : 'Failed to enumerate desktop capture sources.',
+      sources: [],
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+}
+

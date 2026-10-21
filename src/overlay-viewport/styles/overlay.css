@@ -110,20 +110,68 @@ body.overlay-body,
 }
 
 /*
+ * Live Gameplay Feed Layer (Fullscreen or Movable/Resizable Picture-in-Picture Frame)
+ */
+.overlay-gameplay-frame {
+  position: absolute;
+  left: var(--ov-gameplay-x, 58%);
+  top: var(--ov-gameplay-y, 56%);
+  width: var(--ov-gameplay-w, 38%);
+  height: var(--ov-gameplay-h, 38%);
+  z-index: var(--ov-gameplay-z-index, 4);
+  opacity: var(--ov-gameplay-opacity, 1);
+  border: var(--ov-gameplay-border, none);
+  border-radius: var(--ov-gameplay-radius, 8px);
+  overflow: hidden;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    left 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    top 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    width 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    height 140ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 150ms ease;
+}
+
+.overlay-gameplay-frame-Pip {
+  background: rgba(6, 10, 18, 0.86);
+  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.78);
+}
+
+.overlay-gameplay-frame-Fullscreen {
+  background: transparent;
+}
+
+.overlay-gameplay-video {
+  width: 100%;
+  height: 100%;
+  object-fit: var(--ov-gameplay-fit, contain);
+  display: block;
+  pointer-events: none;
+}
+
+/*
  * Independent Scorecard / Table Stage
- * Independently customizable width, height, X/Y offset, typography, and colors.
+ * Independently customizable width, height, X/Y offset, scale, z-index layer order, typography, and colors.
  */
 .overlay-scorecard-stage {
   position: relative;
-  z-index: 1;
+  z-index: var(--ov-lb-z-index, 10);
   width: var(--ov-table-width, 96%);
   height: var(--ov-table-height, 92%);
-  transform: translate(var(--ov-offset-x, 0%), var(--ov-offset-y, 0%));
+  transform: translate(var(--ov-offset-x, 0%), var(--ov-offset-y, 0%))
+    scale(var(--ov-lb-scale, 1));
+  transform-origin: center center;
+  border: var(--ov-lb-border, none);
+  border-radius: var(--ov-lb-radius, 0px);
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .overlay-header-panel {

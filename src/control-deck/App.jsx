@@ -13,6 +13,8 @@ import MatchToolbar from './components/MatchToolbar.jsx';
 import MatchStatus from './components/MatchStatus.jsx';
 import TeamCard from './components/TeamCard.jsx';
 import OverlayEditorPanel from './components/OverlayEditorPanel.jsx';
+import GameplayWindowModal from './components/GameplayWindowModal.jsx';
+import { stopGameplayCapture } from '../shared/gameplayCaptureManager.js';
 import { useMatchState } from './hooks/useMatchState.js';
 import {
   playBroadcastCue,
@@ -29,6 +31,7 @@ export default function ControlDeckApp() {
   const [manualPosInput, setManualPosInput] = useState('');
   const [showOverlayMonitor, setShowOverlayMonitor] = useState(true);
   const [showOverlayEditor, setShowOverlayEditor] = useState(true);
+  const [isGameplayModalOpen, setIsGameplayModalOpen] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(() =>
     readAudioEnabledPreference()
   );
@@ -322,6 +325,13 @@ export default function ControlDeckApp() {
         onToggleOverlay={handleToggleOverlay}
         onCloseOverlay={handleCloseOverlay}
         onReopenOverlay={handleReopenOverlay}
+        gameplayCaptureActive={Boolean(
+          matchState?.overlayConfig?.gameplay?.captureActive
+        )}
+        gameplayCompositionMode={
+          matchState?.overlayConfig?.gameplay?.compositionMode || 'OVERLAY_ONLY'
+        }
+        onOpenGameplayWindow={() => setIsGameplayModalOpen(true)}
         windowState={windowState}
         onMinimizeWindow={handleMinimizeWindow}
         onToggleMaximizeWindow={handleToggleMaximizeWindow}
@@ -1064,6 +1074,7 @@ export default function ControlDeckApp() {
                   <OverlayViewportApp
                     embeddedMode={true}
                     overrideOverlayConfig={matchState?.overlayConfig || null}
+                    onOpenGameplayWindow={() => setIsGameplayModalOpen(true)}
                   />
                 )}
               </div>
@@ -1076,6 +1087,14 @@ export default function ControlDeckApp() {
                   onUpdateOverlayConfig={(partialOverlayConfig) =>
                     updateBroadcastMeta({ overlayConfig: partialOverlayConfig })
                   }
+                  onSelectCompositionMode={(modeId) =>
+                    updateBroadcastMeta({ compositionMode: modeId })
+                  }
+                  onApplyCornerPreset={(presetId, target) =>
+                    updateBroadcastMeta({
+                      applyCornerPreset: { presetId, target },
+                    })
+                  }
                   onUploadBackground={(backgroundUpload) =>
                     updateBroadcastMeta({ backgroundUpload })
                   }
@@ -1085,9 +1104,33 @@ export default function ControlDeckApp() {
                   onResetScorecard={() =>
                     updateBroadcastMeta({ resetOverlayScorecard: true })
                   }
+                  onResetGameplay={() =>
+                    updateBroadcastMeta({
+                      resetOverlayGameplay: true,
+                      preserveCaptureSource: true,
+                    })
+                  }
                   onResetAll={() =>
                     updateBroadcastMeta({ resetOverlayAll: true })
                   }
+                  onOpenGameplayWindow={() => setIsGameplayModalOpen(true)}
+                  onStopGameplayCapture={() => {
+                    stopGameplayCapture();
+                    updateBroadcastMeta({
+                      overlayConfig: {
+                        gameplay: {
+                          ...(matchState?.overlayConfig?.gameplay || {}),
+                          captureActive: false,
+                          sourceId: null,
+                          sourceName: null,
+                          sourceType: null,
+                          sourceStatus: 'STOPPED',
+                          sourceStatusMessage:
+                            'Gameplay capture stopped by operator.',
+                        },
+                      },
+                    });
+                  }}
                   onApplyWindowBounds={(bounds) => {
                     const controller = getBroadcastController();
                     controller.setOverlayBounds?.(bounds).catch(() => {});
@@ -1098,6 +1141,14 @@ export default function ControlDeckApp() {
           )}
         </div>
       </main>
+
+      {/* Gameplay Window Source Selector & Composition Modal */}
+      <GameplayWindowModal
+        isOpen={isGameplayModalOpen}
+        onClose={() => setIsGameplayModalOpen(false)}
+        overlayConfig={matchState?.overlayConfig}
+        onUpdateBroadcastMeta={updateBroadcastMeta}
+      />
     </div>
   );
 }

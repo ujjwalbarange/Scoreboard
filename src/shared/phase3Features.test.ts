@@ -23,11 +23,18 @@ import {
   sanitizeOverlayConfig,
   resetBackgroundConfig,
   resetScorecardConfig,
+  resetGameplayConfig,
+  applyCompositionModePreset,
+  applyCornerPlacementPreset,
   validateBackgroundImageUpload,
   computeResponsiveCanvasScale,
   checkOverlayLayoutFit,
   computeOverlayCssVariables,
 } from './overlayLayout.js';
+import {
+  getDesktopCapturePermissionStatus,
+  listDesktopCaptureSources,
+} from '../../electron/ipc/handlers.js';
 
 test('Phase 3 Fuzzy Search matches slot keys, partial names, typos, and player rosters', () => {
   const teams: any[] = buildDefaultTemplateTeams('BGMI');
@@ -463,5 +470,211 @@ test('Phase 3 Addendum: Background image validation, application-managed asset p
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ============================================================================
+// 8. GAMEPLAY WINDOW INTEGRATION & PICTURE-IN-PICTURE BROADCAST MODE TESTS
+// ============================================================================
+
+test('Gameplay Window desktopCapturer enumerates windows/displays, detects minimized windows, and handles permission denial', async () => {
+  const sampleThumbUrl =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  // 1. Permission denied case
+  const deniedRes: any = await listDesktopCaptureSources(
+    {
+      getSources: async () => [],
+    },
+    {
+      getMediaAccessStatus: () => 'denied',
+    }
+  );
+  assert.equal(deniedRes.ok, false);
+  assert.equal(deniedRes.permissionStatus, 'denied');
+  assert.match(deniedRes.error, /Screen Recording permission is denied/i);
+
+  // 2. Normal desktopCapturer enumeration with active window, screen, minimized window, and self window
+  const mockCapturer = {
+    getSources: async () => [
+      {
+        id: 'window:900:0',
+        name: 'Esports Broadcast Controller — Operator Control Deck',
+        thumbnail: {
+          isEmpty: () => false,
+          getSize: () => ({ width: 320, height: 180 }),
+          toDataURL: () => sampleThumbUrl,
+        },
+        appIcon: null,
+      },
+      {
+        id: 'window:404:0',
+        name: 'Minimized Emulator Window',
+        thumbnail: {
+          isEmpty: () => true,
+          getSize: () => ({ width: 0, height: 0 }),
+          toDataURL: () => '',
+        },
+        appIcon: null,
+      },
+      {
+        id: 'screen:1:0',
+        name: 'Entire Screen 1',
+        display_id: '101',
+        thumbnail: {
+          isEmpty: () => false,
+          getSize: () => ({ width: 320, height: 180 }),
+          toDataURL: () => sampleThumbUrl,
+        },
+        appIcon: null,
+      },
+      {
+        id: 'window:101:0',
+        name: 'BGMI Tournament Spectator Client',
+        thumbnail: {
+          isEmpty: () => false,
+          getSize: () => ({ width: 320, height: 180 }),
+          toDataURL: () => sampleThumbUrl,
+        },
+        appIcon: {
+          isEmpty: () => false,
+          toDataURL: () => sampleThumbUrl,
+        },
+      },
+    ],
+  };
+
+  const okRes: any = await listDesktopCaptureSources(mockCapturer, {
+    getMediaAccessStatus: () => 'granted',
+  });
+
+  assert.equal(okRes.ok, true);
+  assert.equal(okRes.sources.length, 4);
+
+  // First item should be the active non-self game window
+  assert.equal(okRes.sources[0].id, 'window:101:0');
+  assert.equal(okRes.sources[0].kind, 'window');
+  assert.equal(okRes.sources[0].captureAvailable, true);
+  assert.equal(okRes.sources[0].isSelfWindow, false);
+
+  // Second item should be the display screen
+  assert.equal(okRes.sources[1].id, 'screen:1:0');
+  assert.equal(okRes.sources[1].kind, 'screen');
+  assert.equal(okRes.sources[1].captureAvailable, true);
+
+  // Minimized window should be flagged captureAvailable = false with clear reason
+  const minimizedEntry = okRes.sources.find(
+    (s: any) => s.id === 'window:404:0'
+  );
+  assert.ok(minimizedEntry);
+  assert.equal(minimizedEntry.captureAvailable, false);
+  assert.match(minimizedEntry.unavailableReason, /minimized/i);
+
+  // Self window should be flagged isSelfWindow = true and sorted last
+  assert.equal(okRes.sources[3].id, 'window:900:0');
+  assert.equal(okRes.sources[3].isSelfWindow, true);
+});
+
+test('Broadcast Composition Modes (Fullscreen, PiP, Leaderboard Focus, Overlay Only, Gameplay Only) and Corner Presets work accurately', () => {
+  let cfg: any = createDefaultOverlayConfig();
+  assert.equal(cfg.gameplay.compositionMode, 'OVERLAY_ONLY');
+  assert.equal(cfg.gameplay.displayMode, 'contain'); // aspect-ratio preserved by default
+
+  // 1. Fullscreen Gameplay: fills 100%x100% canvas, leaderboard visible and docked in corner
+  cfg = applyCompositionModePreset(cfg, 'FULLSCREEN_GAMEPLAY');
+  assert.equal(cfg.gameplay.compositionMode, 'FULLSCREEN_GAMEPLAY');
+  assert.equal(cfg.gameplay.frameWidthPercent, 100);
+  assert.equal(cfg.gameplay.frameHeightPercent, 100);
+  assert.equal(cfg.gameplay.leaderboardVisible, true);
+  assert.equal(cfg.gameplay.leaderboardCornerPreset, 'top-right');
+  assert.ok(cfg.scorecard.offsetXPercent > 0);
+  assert.ok(cfg.scorecard.offsetYPercent < 0);
+
+  let vars: any = computeOverlayCssVariables(cfg, 13, 'MATCH');
+  assert.equal(vars.compositionState.showGameplayLayer, true);
+  assert.equal(vars.compositionState.showLeaderboardLayer, true);
+
+  // 2. Picture-in-Picture: smaller movable/resizable gameplay frame + live leaderboard
+  cfg = applyCompositionModePreset(cfg, 'PICTURE_IN_PICTURE');
+  assert.equal(cfg.gameplay.compositionMode, 'PICTURE_IN_PICTURE');
+  assert.equal(cfg.gameplay.frameWidthPercent, 38);
+  assert.equal(cfg.gameplay.frameHeightPercent, 38);
+  assert.equal(cfg.gameplay.leaderboardVisible, true);
+
+  // Test all 5 corner placement presets on gameplay PiP frame
+  const topLeftCfg: any = applyCornerPlacementPreset(
+    cfg,
+    'top-left',
+    'gameplay'
+  );
+  assert.equal(topLeftCfg.gameplay.frameXPercent, 3);
+  assert.equal(topLeftCfg.gameplay.frameYPercent, 3);
+
+  const topRightCfg: any = applyCornerPlacementPreset(
+    cfg,
+    'top-right',
+    'gameplay'
+  );
+  assert.equal(topRightCfg.gameplay.frameXPercent, 59);
+  assert.equal(topRightCfg.gameplay.frameYPercent, 3);
+
+  const bottomLeftCfg: any = applyCornerPlacementPreset(
+    cfg,
+    'bottom-left',
+    'gameplay'
+  );
+  assert.equal(bottomLeftCfg.gameplay.frameXPercent, 3);
+  assert.equal(bottomLeftCfg.gameplay.frameYPercent, 59);
+
+  const bottomRightCfg: any = applyCornerPlacementPreset(
+    cfg,
+    'bottom-right',
+    'gameplay'
+  );
+  assert.equal(bottomRightCfg.gameplay.frameXPercent, 59);
+  assert.equal(bottomRightCfg.gameplay.frameYPercent, 59);
+
+  const centerCfg: any = applyCornerPlacementPreset(cfg, 'center', 'gameplay');
+  assert.equal(centerCfg.gameplay.frameXPercent, 31);
+  assert.equal(centerCfg.gameplay.frameYPercent, 31);
+
+  // 3. Leaderboard Focus: prominent leaderboard + secondary compact gameplay frame
+  cfg = applyCompositionModePreset(cfg, 'LEADERBOARD_FOCUS');
+  assert.equal(cfg.gameplay.compositionMode, 'LEADERBOARD_FOCUS');
+  assert.equal(cfg.gameplay.frameWidthPercent, 28);
+  assert.equal(cfg.gameplay.frameHeightPercent, 28);
+  assert.equal(cfg.gameplay.leaderboardScale, 0.96);
+  assert.equal(cfg.gameplay.leaderboardVisible, true);
+
+  // 4. Gameplay Only: hides leaderboard without stopping gameplay capture
+  cfg = sanitizeOverlayConfig(
+    {
+      gameplay: {
+        ...cfg.gameplay,
+        captureActive: true,
+        sourceId: 'window:101:0',
+        sourceName: 'BGMI Spectator',
+      },
+    },
+    cfg
+  );
+  cfg = applyCompositionModePreset(cfg, 'GAMEPLAY_ONLY');
+  assert.equal(cfg.gameplay.compositionMode, 'GAMEPLAY_ONLY');
+  assert.equal(cfg.gameplay.leaderboardVisible, false);
+  assert.equal(cfg.gameplay.captureActive, true);
+  assert.equal(cfg.gameplay.sourceId, 'window:101:0');
+
+  vars = computeOverlayCssVariables(cfg, 13, 'MATCH');
+  assert.equal(vars.compositionState.showGameplayLayer, true);
+  assert.equal(vars.compositionState.showLeaderboardLayer, false);
+
+  // 5. Reset Gameplay Layout preserves active capture source when requested
+  const afterReset: any = resetGameplayConfig(cfg, {
+    preserveCaptureSource: true,
+  });
+  assert.equal(afterReset.gameplay.compositionMode, 'OVERLAY_ONLY');
+  assert.equal(afterReset.gameplay.leaderboardVisible, true);
+  assert.equal(afterReset.gameplay.captureActive, true);
+  assert.equal(afterReset.gameplay.sourceId, 'window:101:0');
+});
+
 
 

@@ -17,8 +17,11 @@ import {
   createCanonicalTeam,
 } from '../../src/shared/match-types.js';
 import {
+  applyCompositionModePreset,
+  applyCornerPlacementPreset,
   createDefaultOverlayConfig,
   resetBackgroundConfig,
+  resetGameplayConfig,
   resetScorecardConfig,
   sanitizeOverlayConfig,
   validateBackgroundImageUpload,
@@ -208,6 +211,24 @@ export class MatchEngine {
       );
     }
 
+    if (typeof payload.compositionMode === 'string') {
+      nextOverlayConfig = applyCompositionModePreset(
+        nextOverlayConfig,
+        payload.compositionMode
+      );
+    }
+
+    if (
+      payload.applyCornerPreset &&
+      typeof payload.applyCornerPreset === 'object'
+    ) {
+      nextOverlayConfig = applyCornerPlacementPreset(
+        nextOverlayConfig,
+        payload.applyCornerPreset.presetId,
+        payload.applyCornerPreset.target || 'gameplay'
+      );
+    }
+
     if (payload.overlayConfig && typeof payload.overlayConfig === 'object') {
       nextOverlayConfig = sanitizeOverlayConfig(
         payload.overlayConfig,
@@ -221,6 +242,12 @@ export class MatchEngine {
 
     if (payload.resetOverlayScorecard) {
       nextOverlayConfig = resetScorecardConfig(nextOverlayConfig);
+    }
+
+    if (payload.resetOverlayGameplay) {
+      nextOverlayConfig = resetGameplayConfig(nextOverlayConfig, {
+        preserveCaptureSource: Boolean(payload.preserveCaptureSource),
+      });
     }
 
     if (payload.resetOverlayAll) {

@@ -9,7 +9,13 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  ipcMain,
+  systemPreferences,
+} from 'electron';
 import { WINDOW_DIMENSIONS } from '../src/shared/constants.js';
 import {
   broadcastConnectionStatus,
@@ -220,6 +226,8 @@ app.whenReady().then(() => {
     isPackaged: Boolean(app.isPackaged),
     userDataPath: app.getPath('userData'),
     resourcesPath: process.resourcesPath,
+    desktopCapturer,
+    systemPreferences,
   };
 
   registerIpcHandlers(ipcMain, windowManager, runtimeOptions);
