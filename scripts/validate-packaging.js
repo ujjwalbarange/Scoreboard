@@ -64,13 +64,39 @@ export function validateProjectAndBuildArtifacts(rootDir = ROOT_DIR) {
     }
   }
 
-  // 2. Validate Lockfile presence (package-lock.json or bun.lock)
-  const hasNpmLock = fs.existsSync(path.join(rootDir, 'package-lock.json'));
+  // 2. Validate Lockfile presence (package-lock.json or bun.lock) and Windows x64 native optional entries
+  const npmLockPath = path.join(rootDir, 'package-lock.json');
+  const hasNpmLock = fs.existsSync(npmLockPath);
   const hasBunLock = fs.existsSync(path.join(rootDir, 'bun.lock'));
   if (!hasNpmLock && !hasBunLock) {
     errors.push(
       'Missing dependency lockfile (expected package-lock.json or bun.lock).'
     );
+  }
+  if (hasNpmLock) {
+    try {
+      const npmLock = JSON.parse(fs.readFileSync(npmLockPath, 'utf-8'));
+      const requiredWinOptionalLockKeys = [
+        'node_modules/@typescript/typescript-win32-x64',
+        'node_modules/@esbuild/win32-x64',
+        'node_modules/@rolldown/binding-win32-x64-msvc',
+        'node_modules/@tailwindcss/oxide-win32-x64-msvc',
+        'node_modules/lightningcss-win32-x64-msvc',
+      ];
+      for (const lockKey of requiredWinOptionalLockKeys) {
+        if (!npmLock.packages?.[lockKey]) {
+          errors.push(
+            `package-lock.json is missing Windows x64 native optional dependency "${lockKey}" required for GitHub Actions windows-latest builds.`
+          );
+        }
+      }
+    } catch (err) {
+      errors.push(
+        `Invalid JSON in package-lock.json: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
   }
 
   // 3. Validate electron-builder.json configuration

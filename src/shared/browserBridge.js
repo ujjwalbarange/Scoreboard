@@ -226,6 +226,9 @@ export function getBroadcastController() {
       case 'setActiveGame':
         result = fallbackEngine.setActiveGame(payload?.game ?? 'BGMI');
         break;
+      case 'updateBroadcastMeta':
+        result = fallbackEngine.updateBroadcastMeta(payload || {});
+        break;
       case 'selectTeam':
         result = fallbackEngine.selectTeam(payload?.key ?? null);
         break;
@@ -540,6 +543,8 @@ export function getBroadcastController() {
     },
 
     setActiveGame: (game) => invokeServerCommand('setActiveGame', { game }),
+    updateBroadcastMeta: (payload) =>
+      invokeServerCommand('updateBroadcastMeta', payload || {}),
     selectTeam: (key) => invokeServerCommand('selectTeam', { key }),
     incrementKill: (key) => invokeServerCommand('incrementKill', { key }),
     decrementKill: (key) => invokeServerCommand('decrementKill', { key }),

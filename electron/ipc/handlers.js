@@ -417,6 +417,13 @@ export function registerIpcHandlers(ipcMain, windowManager, options = {}) {
     return matchManager.setActiveGame(game);
   });
 
+  ipcMain.handle(
+    IPC_CHANNELS.UPDATE_BROADCAST_META,
+    async (_event, payload) => {
+      return matchManager.updateBroadcastMeta(payload || {});
+    }
+  );
+
   ipcMain.handle(IPC_CHANNELS.SELECT_TEAM, async (_event, payload) => {
     const key =
       typeof payload === 'string' || payload === null

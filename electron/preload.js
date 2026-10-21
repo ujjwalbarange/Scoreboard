@@ -60,6 +60,7 @@ const ALLOWED_INVOKE = new Set([
   IPC_CHANNELS.ACKNOWLEDGE_TEST_EVENT,
   IPC_CHANNELS.GET_MATCH_STATE,
   'match:set-active-game',
+  'match:update-broadcast-meta',
   IPC_CHANNELS.SELECT_TEAM,
   IPC_CHANNELS.INCREMENT_KILL,
   IPC_CHANNELS.DECREMENT_KILL,
@@ -148,10 +149,12 @@ const broadcastControllerAPI = Object.freeze({
   onTestEventAck: (callback) =>
     safeSubscribe(IPC_CHANNELS.TEST_EVENT_ACK, callback),
 
-  // Phase 2 Authoritative Match & CSV Methods
+  // Phase 2 & Phase 3 Authoritative Match & CSV Methods
   getMatchState: () => safeInvoke(IPC_CHANNELS.GET_MATCH_STATE),
   setActiveGame: (game) =>
     safeInvoke('match:set-active-game', { game }),
+  updateBroadcastMeta: (payload) =>
+    safeInvoke('match:update-broadcast-meta', payload || {}),
   selectTeam: (key) => safeInvoke(IPC_CHANNELS.SELECT_TEAM, { key }),
   incrementKill: (key) => safeInvoke(IPC_CHANNELS.INCREMENT_KILL, { key }),
   decrementKill: (key) => safeInvoke(IPC_CHANNELS.DECREMENT_KILL, { key }),

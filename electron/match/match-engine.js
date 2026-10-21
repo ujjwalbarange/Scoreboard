@@ -8,6 +8,7 @@
 
 import {
   MATCH_STATUS,
+  OVERLAY_VIEW_MODES,
   SAVE_STATUS,
 } from '../../src/shared/constants.js';
 import { createEventId } from '../../src/shared/ipcValidator.js';
@@ -30,6 +31,8 @@ import {
   sortTeamsForLeaderboard,
 } from './scoring-engine.js';
 import { UndoManager } from './undo-manager.js';
+
+const VALID_OVERLAY_MODES = new Set(Object.values(OVERLAY_VIEW_MODES));
 
 export class MatchEngine {
   /**
@@ -54,6 +57,7 @@ export class MatchEngine {
       tournamentTitle:
         this.config?.tournamentTitle || 'PRO SERIES INVITATIONAL S4',
       stageLabel: this.config?.defaultStageLabel || 'Week 01 Day 01',
+      overlayViewMode: OVERLAY_VIEW_MODES.MATCH,
       activeGame: game,
       matchId: 'Match_01_BGMI',
       roundNumber: 1,
@@ -85,6 +89,7 @@ export class MatchEngine {
     return {
       tournamentTitle: this.state.tournamentTitle,
       stageLabel: this.state.stageLabel,
+      overlayViewMode: this.state.overlayViewMode,
       activeGame: this.state.activeGame,
       matchId: this.state.matchId,
       roundNumber: this.state.roundNumber,
@@ -108,6 +113,9 @@ export class MatchEngine {
    */
   _captureUndoableState() {
     return {
+      tournamentTitle: this.state.tournamentTitle,
+      stageLabel: this.state.stageLabel,
+      overlayViewMode: this.state.overlayViewMode,
       activeGame: this.state.activeGame,
       matchId: this.state.matchId,
       roundNumber: this.state.roundNumber,
@@ -115,6 +123,68 @@ export class MatchEngine {
       selectedTeamKey: this.state.selectedTeamKey,
       teams: JSON.parse(JSON.stringify(this.state.teams)),
     };
+  }
+
+  /**
+   * Updates editable broadcast metadata (tournamentTitle, stageLabel, overlayViewMode)
+   * and synchronizes live with the Overlay Viewport.
+   *
+   * @param {{
+   *   tournamentTitle?: string,
+   *   stageLabel?: string,
+   *   overlayViewMode?: 'MATCH' | 'OVERALL' | 'END_OF_MATCH'
+   * }} payload
+   */
+  updateBroadcastMeta(payload = {}) {
+    if (!payload || typeof payload !== 'object') {
+      return { ok: false, error: 'Invalid broadcast metadata payload.' };
+    }
+
+    let nextTitle = this.state.tournamentTitle;
+    let nextStage = this.state.stageLabel;
+    let nextMode = this.state.overlayViewMode;
+
+    if (typeof payload.tournamentTitle === 'string') {
+      const cleaned = payload.tournamentTitle.trim().slice(0, 80);
+      if (!cleaned) {
+        return {
+          ok: false,
+          error: 'Event / Tournament name cannot be empty.',
+        };
+      }
+      nextTitle = cleaned;
+    }
+
+    if (typeof payload.stageLabel === 'string') {
+      const cleanedStage = payload.stageLabel.trim().slice(0, 60);
+      nextStage = cleanedStage || 'LIVE BROADCAST';
+    }
+
+    if (typeof payload.overlayViewMode === 'string') {
+      const upperMode = payload.overlayViewMode.trim().toUpperCase();
+      if (!VALID_OVERLAY_MODES.has(upperMode)) {
+        return {
+          ok: false,
+          error: `Unsupported overlay view mode "${payload.overlayViewMode}".`,
+        };
+      }
+      nextMode = upperMode;
+    }
+
+    this.state.tournamentTitle = nextTitle;
+    this.state.stageLabel = nextStage;
+    this.state.overlayViewMode = nextMode;
+    this.state.lastError = null;
+    this.state.updatedAt = new Date().toISOString();
+    this.state.lastEvent = {
+      eventId: createEventId('META'),
+      type: 'BROADCAST_META_UPDATED',
+      overlayViewMode: nextMode,
+      message: `Updated broadcast header ("${nextTitle}" · ${nextMode}).`,
+      timestamp: this.state.updatedAt,
+    };
+
+    return { ok: true, snapshot: this.getSnapshot() };
   }
 
   /**

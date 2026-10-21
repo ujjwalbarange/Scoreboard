@@ -49,15 +49,39 @@ jobs:
           $ErrorActionPreference = "Stop"
           Write-Host "Checking repository lockfiles..."
           if (Test-Path "package-lock.json") {
-            Write-Host "Found package-lock.json — running reproducible 'npm ci --legacy-peer-deps'..."
-            npm ci --legacy-peer-deps
+            Write-Host "Found package-lock.json — running 'npm ci --legacy-peer-deps --include=optional'..."
+            npm ci --legacy-peer-deps --include=optional
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "npm ci reported an issue; falling back to 'npm install --legacy-peer-deps --include=optional'..."
+              npm install --legacy-peer-deps --include=optional --no-audit --no-fund
+            }
           } elseif (Test-Path "bun.lock") {
-            Write-Host "Found bun.lock — installing dependencies with npm --legacy-peer-deps..."
-            npm install --legacy-peer-deps
+            Write-Host "Found bun.lock — installing dependencies with 'npm install --legacy-peer-deps --include=optional'..."
+            npm install --legacy-peer-deps --include=optional --no-audit --no-fund
           } else {
             Write-Error "Missing dependency lockfile (expected package-lock.json or bun.lock)."
             exit 1
           }
+
+          # Verify Windows x64 native optional packages required by TypeScript 7, esbuild/tsx, Vite 8/Rolldown, and Tailwind v4
+          $requiredWinPackages = @(
+            "node_modules/@typescript/typescript-win32-x64/package.json",
+            "node_modules/@esbuild/win32-x64/package.json",
+            "node_modules/@rolldown/binding-win32-x64-msvc/package.json",
+            "node_modules/@tailwindcss/oxide-win32-x64-msvc/package.json",
+            "node_modules/lightningcss-win32-x64-msvc/package.json"
+          )
+          $missingWinPackages = @()
+          foreach ($pkgFile in $requiredWinPackages) {
+            if (-not (Test-Path $pkgFile)) {
+              $missingWinPackages += $pkgFile
+            }
+          }
+          if ($missingWinPackages.Count -gt 0) {
+            Write-Warning "Missing Windows x64 optional native packages after initial install: $($missingWinPackages -join ', '). Running npm install --include=optional to resolve platform binaries..."
+            npm install --legacy-peer-deps --include=optional --no-save --no-audit --no-fund
+          }
+          Write-Host "Verified Windows x64 native packages on disk."
 
       - name: Run TypeScript typecheck (lint)
         run: npm run lint

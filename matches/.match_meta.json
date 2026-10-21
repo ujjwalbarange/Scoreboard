@@ -1,6 +1,6 @@
 {
   "activeMatchId": "Match_01_BGMI",
-  "updatedAt": "2026-10-21T03:34:03.717Z",
+  "updatedAt": "2026-10-21T04:45:45.585Z",
   "matches": {
     "Match_01_BGMI": {
       "matchId": "Match_01_BGMI",
@@ -8,7 +8,10 @@
       "roundNumber": 1,
       "matchStatus": "LIVE",
       "filePath": "matches/Match_01_BGMI.csv",
-      "updatedAt": "2026-10-21T03:34:03.717Z"
+      "updatedAt": "2026-10-21T04:45:45.585Z"
     }
-  }
+  },
+  "tournamentTitle": "BGIS 2026 GRAND FINALS",
+  "stageLabel": "Finals Day 01",
+  "overlayViewMode": "MATCH"
 }

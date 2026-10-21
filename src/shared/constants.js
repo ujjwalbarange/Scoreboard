@@ -51,6 +51,12 @@ export const OVERLAY_CONNECTION_STATE = {
   CHECKING: 'CHECKING...',
 };
 
+export const OVERLAY_VIEW_MODES = Object.freeze({
+  MATCH: 'MATCH',
+  OVERALL: 'OVERALL',
+  END_OF_MATCH: 'END_OF_MATCH',
+});
+
 export const CSV_SCHEMA_HEADERS = Object.freeze([
   'Key',
   'TeamName',
@@ -70,7 +76,7 @@ export const TEAM_KEYS_AZ = Object.freeze(
 
 /**
  * Strictly allowlisted IPC channels for Main <-> Renderer communication.
- * Includes all Phase 1 channels plus Phase 2 authoritative match & CSV channels.
+ * Includes all Phase 1 channels plus Phase 2/3 authoritative match & CSV channels.
  */
 export const IPC_CHANNELS = Object.freeze({
   // Phase 1 Invoke Channels (Preserved)
@@ -83,9 +89,10 @@ export const IPC_CHANNELS = Object.freeze({
   SET_OVERLAY_BOUNDS: 'broadcast:set-overlay-bounds',
   ACKNOWLEDGE_TEST_EVENT: 'broadcast:ack-test-event',
 
-  // Phase 2 Authoritative Match Engine Invoke Channels
+  // Phase 2 & Phase 3 Authoritative Match Engine Invoke Channels
   GET_MATCH_STATE: 'match:get-state',
   SET_ACTIVE_GAME: 'match:set-active-game',
+  UPDATE_BROADCAST_META: 'match:update-broadcast-meta',
   SELECT_TEAM: 'match:select-team',
   INCREMENT_KILL: 'match:increment-kill',
   DECREMENT_KILL: 'match:decrement-kill',
@@ -122,6 +129,7 @@ export const ALLOWED_INVOKE_CHANNELS = new Set([
   IPC_CHANNELS.ACKNOWLEDGE_TEST_EVENT,
   IPC_CHANNELS.GET_MATCH_STATE,
   IPC_CHANNELS.SET_ACTIVE_GAME,
+  IPC_CHANNELS.UPDATE_BROADCAST_META,
   IPC_CHANNELS.SELECT_TEAM,
   IPC_CHANNELS.INCREMENT_KILL,
   IPC_CHANNELS.DECREMENT_KILL,

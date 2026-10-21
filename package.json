@@ -19,7 +19,7 @@
     "dist:win": "vite build && node scripts/validate-packaging.js --prepack && electron-builder --win --x64 --config electron-builder.json --publish never",
     "dist:win:nsis": "vite build && node scripts/validate-packaging.js --prepack && electron-builder --win nsis --x64 --config electron-builder.json --publish never",
     "dist:win:portable": "vite build && node scripts/validate-packaging.js --prepack && electron-builder --win portable --x64 --config electron-builder.json --publish never",
-    "test": "tsx --test src/shared/ipcValidator.test.ts src/shared/phase2Engine.test.ts src/shared/packagingConfig.test.ts",
+    "test": "tsx --test src/shared/ipcValidator.test.ts src/shared/phase2Engine.test.ts src/shared/packagingConfig.test.ts src/shared/phase3Features.test.ts",
     "clean": "rm -rf dist dist-release server.js",
     "lint": "tsc --noEmit"
   },

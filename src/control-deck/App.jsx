@@ -3,63 +3,72 @@ import { getBroadcastController } from '../shared/browserBridge.js';
 import {
   MATCH_STATUS,
   OVERLAY_CONNECTION_STATE,
-  WINDOW_DIMENSIONS,
+  OVERLAY_VIEW_MODES,
 } from '../shared/constants.js';
-import { createEventId } from '../shared/ipcValidator.js';
+import { filterTeamsByFuzzySearch } from '../shared/fuzzySearch.js';
 import OverlayViewportApp from '../overlay-viewport/App.jsx';
 import Header from './components/Header.jsx';
 import MatchToolbar from './components/MatchToolbar.jsx';
 import MatchStatus from './components/MatchStatus.jsx';
 import TeamCard from './components/TeamCard.jsx';
 import { useMatchState } from './hooks/useMatchState.js';
+import {
+  playBroadcastCue,
+  readAudioEnabledPreference,
+  writeAudioEnabledPreference,
+} from './utils/soundEffects.js';
 import './styles/control-deck.css';
 
 export default function ControlDeckApp() {
+  const [workspaceTab, setWorkspaceTab] = useState('SQUADS'); // 'SQUADS' | 'TOURNAMENT' | 'FINAL_GRAPHIC'
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortOrder, setSortOrder] = useState('SLOT_AZ'); // 'SLOT_AZ' | 'LEADERBOARD'
   const [searchQuery, setSearchQuery] = useState('');
   const [manualPosInput, setManualPosInput] = useState('');
+  const [showOverlayMonitor, setShowOverlayMonitor] = useState(true);
+  const [audioEnabled, setAudioEnabled] = useState(() =>
+    readAudioEnabledPreference()
+  );
 
-  // Real IPC & Window Lifecycle State (Preserved from Phase 1)
+  // Real IPC & Window Lifecycle State
   const [connectionStatus, setConnectionStatus] = useState(
     OVERLAY_CONNECTION_STATE.CHECKING
   );
   const [overlayAlive, setOverlayAlive] = useState(true);
   const [overlayVisible, setOverlayVisible] = useState(true);
-  const [overlayBounds, setOverlayBounds] = useState({
-    x: 60,
-    y: 60,
-    width: WINDOW_DIMENSIONS.OVERLAY_VIEWPORT.width,
-    height: WINDOW_DIMENSIONS.OVERLAY_VIEWPORT.height,
-  });
   const [lastHeartbeat, setLastHeartbeat] = useState(null);
-  const [tournamentConfigSummary, setTournamentConfigSummary] = useState(null);
 
-  // Test Event Dispatch & Operational Log State
-  const [testSequence, setTestSequence] = useState(1);
-  const [customTestMessage, setCustomTestMessage] = useState(
-    'Sync check: Leaderboard HUD & alpha channel ready'
-  );
-  const [isSendingTest, setIsSendingTest] = useState(false);
-  const [operationalLogs, setOperationalLogs] = useState([]);
-  const [showOverlayMonitor, setShowOverlayMonitor] = useState(true);
+  const searchInputRef = useRef(null);
 
-  const sequenceRef = useRef(1);
-
-  const appendOperationalLog = useCallback((entry) => {
-    setOperationalLogs((prev) => [
-      {
-        id: entry.id || createEventId('LOG'),
-        level: entry.level || 'info',
-        category: entry.category || 'IPC',
-        message: entry.message,
-        timestamp: entry.timestamp || new Date().toISOString(),
-      },
-      ...prev.slice(0, 19),
-    ]);
+  const handleFocusSearch = useCallback(() => {
+    setWorkspaceTab('SQUADS');
+    setTimeout(() => {
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+        searchInputRef.current.select?.();
+      }
+    }, 0);
   }, []);
 
-  // Authoritative Phase 2 Match State & Global Keyboard Controller
+  const handleBroadcastCue = useCallback(
+    (cueType) => {
+      playBroadcastCue(cueType, audioEnabled);
+    },
+    [audioEnabled]
+  );
+
+  const handleToggleAudio = useCallback(() => {
+    setAudioEnabled((prev) => {
+      const next = !prev;
+      writeAudioEnabledPreference(next);
+      if (next) {
+        playBroadcastCue('ROUND_START', true);
+      }
+      return next;
+    });
+  }, []);
+
+  // Authoritative Match State & Global Keyboard Controller
   const {
     matchState,
     isBusy,
@@ -70,6 +79,7 @@ export default function ControlDeckApp() {
     clearPlacementBuffer,
     submitPlacementBuffer,
     setActiveGame,
+    updateBroadcastMeta,
     selectTeam,
     incrementKill,
     decrementKill,
@@ -86,10 +96,11 @@ export default function ControlDeckApp() {
     completeMatch,
     reopenMatch,
   } = useMatchState({
-    onOperationalLog: appendOperationalLog,
+    onFocusSearch: handleFocusSearch,
+    onBroadcastCue: handleBroadcastCue,
   });
 
-  // Initialize IPC connection, fetch tournament_config.json, and subscribe to events
+  // Initialize IPC connection & subscribe to window status events
   useEffect(() => {
     const controller = getBroadcastController();
     let isMounted = true;
@@ -103,42 +114,14 @@ export default function ControlDeckApp() {
         );
         setOverlayAlive(Boolean(snapshot.overlayAlive));
         setOverlayVisible(Boolean(snapshot.overlayVisible));
-        if (snapshot.overlayBounds) {
-          setOverlayBounds(snapshot.overlayBounds);
-        }
         setLastHeartbeat(snapshot.timestamp || new Date().toISOString());
-
-        appendOperationalLog({
-          id: snapshot.eventId || createEventId('INIT'),
-          level: snapshot.overlayAlive ? 'success' : 'warning',
-          category: 'CONNECTION',
-          message: snapshot.overlayAlive
-            ? `Overlay Viewport connected (${snapshot.status}). Main process IPC bridge verified.`
-            : 'Overlay Viewport is currently closed or disconnected.',
-          timestamp: snapshot.timestamp,
-        });
       })
-      .catch((err) => {
+      .catch(() => {
         if (!isMounted) return;
         setConnectionStatus(OVERLAY_CONNECTION_STATE.DISCONNECTED);
         setOverlayAlive(false);
         setOverlayVisible(false);
-        appendOperationalLog({
-          level: 'error',
-          category: 'CONNECTION',
-          message: `Failed to query IPC status: ${
-            err instanceof Error ? err.message : 'Unknown error'
-          }`,
-        });
       });
-
-    controller
-      .getTournamentConfig()
-      .then((res) => {
-        if (!isMounted || !res || !res.ok || !res.config) return;
-        setTournamentConfigSummary(res.config);
-      })
-      .catch(() => {});
 
     const unsubscribeConnection = controller.onConnectionStatus((snapshot) => {
       if (!isMounted || !snapshot) return;
@@ -147,62 +130,25 @@ export default function ControlDeckApp() {
       );
       setOverlayAlive(Boolean(snapshot.overlayAlive));
       setOverlayVisible(Boolean(snapshot.overlayVisible));
-      if (snapshot.overlayBounds) {
-        setOverlayBounds(snapshot.overlayBounds);
-      }
       setLastHeartbeat(snapshot.timestamp || new Date().toISOString());
-
-      let logLevel = 'info';
-      let logMessage = `Overlay connection state updated: ${snapshot.status}`;
-      if (snapshot.reason === 'OVERLAY_CLOSED' || !snapshot.overlayAlive) {
-        logLevel = 'error';
-        logMessage =
-          'Overlay Viewport window closed or disconnected. Connection status updated to DISCONNECTED.';
-      } else if (snapshot.reason === 'OVERLAY_REOPENED_BY_OPERATOR') {
-        logLevel = 'success';
-        logMessage =
-          'Overlay Viewport window reopened cleanly without duplicate IPC listeners.';
-      } else if (snapshot.reason === 'OVERLAY_HIDDEN') {
-        logLevel = 'warning';
-        logMessage =
-          'Overlay Viewport window hidden by operator (IPC remains connected).';
-      } else if (snapshot.reason === 'OVERLAY_SHOWN') {
-        logLevel = 'success';
-        logMessage = 'Overlay Viewport window shown and active on desktop.';
-      }
-
-      appendOperationalLog({
-        id: snapshot.eventId || createEventId('CONN'),
-        level: logLevel,
-        category: 'LIFECYCLE',
-        message: logMessage,
-        timestamp: snapshot.timestamp,
-      });
-    });
-
-    const unsubscribeAck = controller.onTestEventAck((ack) => {
-      if (!isMounted || !ack) return;
-      setLastHeartbeat(ack.receivedAt || new Date().toISOString());
-      appendOperationalLog({
-        id: ack.ackId || createEventId('ACK'),
-        level: 'success',
-        category: 'TEST_RX_ACK',
-        message: `Overlay confirmed receipt of test event ${ack.eventId} (ACK: ${ack.ackId}).`,
-        timestamp: ack.receivedAt,
-      });
     });
 
     return () => {
       isMounted = false;
       if (typeof unsubscribeConnection === 'function') unsubscribeConnection();
-      if (typeof unsubscribeAck === 'function') unsubscribeAck();
     };
-  }, [appendOperationalLog]);
+  }, []);
 
   const activeGame = matchState?.activeGame || 'BGMI';
+  const tournamentTitle =
+    matchState?.tournamentTitle || 'PRO SERIES INVITATIONAL S4';
+  const stageLabel = matchState?.stageLabel || 'Week 01 Day 01';
+  const overlayViewMode =
+    matchState?.overlayViewMode || OVERLAY_VIEW_MODES.MATCH;
   const selectedSlotKey = matchState?.selectedTeamKey || 'A';
   const teams = matchState?.teams || [];
   const leaderboard = matchState?.leaderboard || [];
+  const tournamentStandings = matchState?.tournamentStandings || null;
   const isCompleted = matchState?.matchStatus === MATCH_STATUS.COMPLETED;
 
   const selectedTeam =
@@ -214,80 +160,9 @@ export default function ControlDeckApp() {
     rankByKey.set(entry.Key, entry.leaderboardRank || idx + 1);
   });
 
-  // Handler: Send validated test event over preload bridge
-  const handleSendTestEvent = async () => {
-    const controller = getBroadcastController();
-    setIsSendingTest(true);
-
-    const currentSeq = sequenceRef.current;
-    const teamLabel = selectedTeam
-      ? `Slot [${selectedTeam.Key}] ${selectedTeam.TeamName}`
-      : 'Slot [A]';
-    const eventId = createEventId('TEST');
-    const messageToSend =
-      customTestMessage.trim() || `Diagnostic Ping #${currentSeq} · ${teamLabel}`;
-
-    const payload = {
-      eventId,
-      type: 'DIAGNOSTIC_PING',
-      game: activeGame,
-      sequence: currentSeq,
-      message: `${messageToSend} [${teamLabel}]`,
-      sentAtMs: Date.now(),
-      timestamp: new Date().toISOString(),
-    };
-
-    appendOperationalLog({
-      id: eventId,
-      level: 'info',
-      category: 'TEST_TX',
-      message: `Dispatched test event ${eventId} (SEQ #${currentSeq}) to main process for ${teamLabel}.`,
-      timestamp: payload.timestamp,
-    });
-
-    try {
-      const response = await controller.sendTestEvent(payload);
-      if (response && response.ok) {
-        sequenceRef.current = currentSeq + 1;
-        setTestSequence(sequenceRef.current);
-        setLastHeartbeat(response.timestamp || new Date().toISOString());
-      } else {
-        appendOperationalLog({
-          id: createEventId('ERR'),
-          level: 'error',
-          category: 'TEST_ERR',
-          message:
-            (response && response.error) ||
-            'Failed to deliver test event to Overlay Viewport.',
-          timestamp: new Date().toISOString(),
-        });
-      }
-    } catch (err) {
-      appendOperationalLog({
-        id: createEventId('ERR'),
-        level: 'error',
-        category: 'TEST_ERR',
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Unexpected IPC error sending test event.',
-      });
-    } finally {
-      setIsSendingTest(false);
-    }
-  };
-
   const handleToggleOverlay = async () => {
     const controller = getBroadcastController();
-    const res = await controller.toggleOverlayVisibility();
-    if (!res || !res.ok) {
-      appendOperationalLog({
-        level: 'error',
-        category: 'OVERLAY',
-        message:
-          (res && res.error) || 'Unable to toggle Overlay Viewport visibility.',
-      });
-    }
+    await controller.toggleOverlayVisibility();
   };
 
   const handleCloseOverlay = async () => {
@@ -300,20 +175,6 @@ export default function ControlDeckApp() {
     await controller.reopenOverlayWindow();
   };
 
-  const handleApplyOverlayBounds = async (presetBounds) => {
-    const controller = getBroadcastController();
-    const res = await controller.setOverlayBounds(presetBounds);
-    if (res && res.ok && res.overlayBounds) {
-      setOverlayBounds(res.overlayBounds);
-    } else if (res && res.error) {
-      appendOperationalLog({
-        level: 'error',
-        category: 'BOUNDS',
-        message: res.error,
-      });
-    }
-  };
-
   const handleManualPlacementSubmit = async (e) => {
     e.preventDefault();
     if (manualPosInput.trim() === '') return;
@@ -323,32 +184,64 @@ export default function ControlDeckApp() {
     }
   };
 
-  const baseTeamsList = sortOrder === 'LEADERBOARD' ? leaderboard : teams;
+  // Export cumulative tournament standings as CSV
+  const handleExportTournamentStandingsCsv = () => {
+    const rows = tournamentStandings?.standings || [];
+    if (rows.length === 0) return;
 
-  const filteredTeams = baseTeamsList.filter((team) => {
+    const header =
+      'OverallRank,Key,TeamName,MatchesPlayed,Wins,PriorKP,PriorPP,PriorTT,CurrentRoundKP,CurrentRoundPP,CurrentRoundTT,TotalKP,TotalPP,TotalTT';
+    const lines = rows.map(
+      (r) =>
+        `${r.overallRank},${r.Key},"${String(r.TeamName).replace(
+          /"/g,
+          '""'
+        )}",${r.matchesPlayed},${r.winsCount},${r.priorKP},${r.priorPP},${
+          r.priorTT
+        },${r.currentKP},${r.currentPP},${r.currentTT},${r.totalKP},${
+          r.totalPP
+        },${r.totalTT}`
+    );
+    const csvContent = `${[header, ...lines].join('\n')}\n`;
+
+    try {
+      const blob = new Blob([csvContent], {
+        type: 'text/csv;charset=utf-8;',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute(
+        'download',
+        `Tournament_Standings_${activeGame}.csv`
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      // Ignore in headless environments
+    }
+  };
+
+  // Apply status filter first, then Fuzzy Search (preserving typo tolerance & ranking)
+  const baseTeamsList = sortOrder === 'LEADERBOARD' ? leaderboard : teams;
+  const statusFilteredTeams = baseTeamsList.filter((team) => {
     const isAlive = Number(team.pos) === 0;
-    const matchesStatus =
+    return (
       statusFilter === 'ALL' ||
       (statusFilter === 'ALIVE' && isAlive) ||
-      (statusFilter === 'ELIMINATED' && !isAlive);
-
-    const q = searchQuery.trim().toLowerCase();
-    const players = [team.Player1, team.Player2, team.Player3, team.Player4];
-    const matchesQuery =
-      !q ||
-      String(team.TeamName || '')
-        .toLowerCase()
-        .includes(q) ||
-      String(team.Key || '').toLowerCase() === q ||
-      players.some((p) => String(p || '').toLowerCase().includes(q));
-
-    return matchesStatus && matchesQuery;
+      (statusFilter === 'ELIMINATED' && !isAlive)
+    );
   });
+
+  const filteredTeams = filterTeamsByFuzzySearch(
+    statusFilteredTeams,
+    searchQuery
+  );
 
   const aliveSquadCount = teams.filter((t) => Number(t.pos) === 0).length;
   const totalAlivePlayers = aliveSquadCount * 4;
-  const activeGameRules =
-    tournamentConfigSummary?.scoringRules?.[activeGame] || null;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0b0e14] text-slate-100">
@@ -356,19 +249,22 @@ export default function ControlDeckApp() {
       <Header
         selectedGame={activeGame}
         onSelectGame={(gameId) => setActiveGame(gameId)}
+        tournamentTitle={tournamentTitle}
+        stageLabel={stageLabel}
+        onUpdateBroadcastMeta={updateBroadcastMeta}
         matchStatus={matchState?.matchStatus || MATCH_STATUS.LIVE}
         connectionStatus={connectionStatus}
         overlayAlive={overlayAlive}
         overlayVisible={overlayVisible}
         lastHeartbeat={lastHeartbeat}
+        audioEnabled={audioEnabled}
+        onToggleAudio={handleToggleAudio}
         onToggleOverlay={handleToggleOverlay}
         onCloseOverlay={handleCloseOverlay}
         onReopenOverlay={handleReopenOverlay}
-        onSendTestEvent={handleSendTestEvent}
-        isSendingTest={isSendingTest}
       />
 
-      {/* 2. Phase 2 Match Lifecycle & CSV Persistence Toolbar */}
+      {/* 2. Match Lifecycle, Overlay Mode & CSV Toolbar */}
       <MatchToolbar
         matchState={matchState}
         isBusy={isBusy}
@@ -380,10 +276,11 @@ export default function ControlDeckApp() {
         onCreateNextRound={createNextRound}
         onCompleteMatch={completeMatch}
         onReopenMatch={reopenMatch}
+        onUpdateBroadcastMeta={updateBroadcastMeta}
         onUndo={undoLastAction}
       />
 
-      {/* 3. Phase 2 Live Match Status, Active Keyboard Selection & Placement Buffer HUD */}
+      {/* 3. Live Match Status, Active Keyboard Selection & Placement Buffer HUD */}
       <MatchStatus
         matchState={matchState}
         heldTeamKey={heldTeamKey}
@@ -394,173 +291,10 @@ export default function ControlDeckApp() {
         onDismissBanner={clearValidationBanner}
       />
 
-      {/* 4. Secondary Operational Feedback & IPC Diagnostics Strip */}
-      <section
-        aria-label="Operational Feedback and IPC Diagnostics"
-        className="border-b border-slate-800/90 bg-[#0f141e] px-4 sm:px-6 py-2.5"
-      >
-        <div className="mx-auto flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
-          {/* Custom Test Payload Input & Quick Bounds Presets */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
-              <label
-                htmlFor="ipc-test-payload-input"
-                className="text-xs font-semibold text-slate-300 whitespace-nowrap shrink-0"
-              >
-                Test Event Payload:
-              </label>
-              <input
-                id="ipc-test-payload-input"
-                type="text"
-                value={customTestMessage}
-                onChange={(e) => setCustomTestMessage(e.target.value)}
-                placeholder="Enter diagnostic message for overlay..."
-                maxLength={140}
-                className="w-full sm:w-64 rounded border border-slate-700 bg-[#090c12] px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              <span className="text-slate-400 whitespace-nowrap shrink-0">
-                Overlay Geometry:
-              </span>
-              <span className="deck-mono-font text-cyan-300 whitespace-nowrap shrink-0">
-                {overlayBounds.width}×{overlayBounds.height} @ (
-                {overlayBounds.x},{overlayBounds.y})
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  handleApplyOverlayBounds({
-                    x: 60,
-                    y: 60,
-                    width: 460,
-                    height: 680,
-                  })
-                }
-                disabled={!overlayAlive}
-                className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-40 whitespace-nowrap shrink-0"
-              >
-                Default 460×680
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleApplyOverlayBounds({
-                    x: 120,
-                    y: 90,
-                    width: 420,
-                    height: 620,
-                  })
-                }
-                disabled={!overlayAlive}
-                className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-40 whitespace-nowrap shrink-0"
-              >
-                Compact 420×620
-              </button>
-            </div>
-          </div>
-
-          {/* Right: Config Summary & Live Overlay Monitor Toggle */}
-          <div className="flex flex-wrap items-center justify-between xl:justify-end gap-2.5 text-xs">
-            <div className="flex flex-wrap items-center gap-2 text-slate-400">
-              <span>Ruleset:</span>
-              <span className="deck-mono-font text-slate-200">
-                {activeGame} (1st:{' '}
-                {activeGameRules?.placementPoints?.['1'] ??
-                  (activeGame === 'FREE_FIRE' ? 12 : 10)}
-                pt · Kill: {activeGameRules?.killPoints ?? 1}pt)
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>
-                Next Seq:{' '}
-                <strong className="deck-mono-font text-cyan-400">
-                  #{testSequence}
-                </strong>
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowOverlayMonitor((prev) => !prev)}
-                className="rounded border border-cyan-500/40 bg-cyan-950/40 px-2.5 py-1 text-xs font-semibold text-cyan-300 hover:bg-cyan-900/50 transition-colors whitespace-nowrap shrink-0"
-              >
-                {showOverlayMonitor
-                  ? 'Hide Overlay Monitor'
-                  : 'Show Overlay Monitor'}
-              </button>
-              <a
-                href="./overlay.html"
-                className="rounded border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs font-medium text-slate-300 hover:border-slate-500 hover:text-white transition-colors whitespace-nowrap shrink-0"
-              >
-                Standalone /overlay.html
-              </a>
-            </div>
-          </div>
-        </div>
-
-        {/* Live Operational Feedback Log Strip */}
-        <div
-          data-testid="operational-feedback-panel"
-          className="mt-2 rounded border border-slate-800 bg-[#090c12] px-3 py-1.5"
-        >
-          <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-800/80">
-            <span className="text-[11px] font-semibold tracking-wider text-slate-400">
-              OPERATIONAL FEEDBACK &amp; IPC EVENT LOG
-            </span>
-            <span className="deck-mono-font text-[11px] text-slate-400">
-              {operationalLogs.length} events recorded
-            </span>
-          </div>
-          <ul
-            className="mt-1 max-h-20 overflow-y-auto space-y-1 text-xs"
-            aria-live="polite"
-          >
-            {operationalLogs.length === 0 ? (
-              <li className="text-slate-500 py-0.5">
-                Awaiting IPC lifecycle or match events...
-              </li>
-            ) : (
-              operationalLogs.map((log) => {
-                const badgeColor =
-                  log.level === 'success'
-                    ? 'text-emerald-400'
-                    : log.level === 'warning'
-                    ? 'text-amber-400'
-                    : log.level === 'error'
-                    ? 'text-rose-400'
-                    : 'text-cyan-400';
-
-                return (
-                  <li
-                    key={log.id}
-                    className="flex flex-wrap items-baseline gap-2 text-[11px] leading-relaxed"
-                  >
-                    <span className="deck-mono-font text-slate-500 shrink-0">
-                      [{new Date(log.timestamp).toLocaleTimeString()}]
-                    </span>
-                    <span
-                      className={`deck-mono-font font-semibold shrink-0 ${badgeColor}`}
-                    >
-                      [{log.category}]
-                    </span>
-                    <span className="deck-mono-font text-slate-400 shrink-0">
-                      {log.id}
-                    </span>
-                    <span className="text-slate-200">{log.message}</span>
-                  </li>
-                );
-              })
-            )}
-          </ul>
-        </div>
-      </section>
-
-      {/* 5. Main Workspace: 26-Team Two-Column Grid + Dockable Transparent Overlay Viewport Monitor */}
+      {/* 4. Main Workspace: Operator Control Deck + Dockable Transparent Overlay Viewport Monitor */}
       <main className="mx-auto w-full flex-1 px-4 sm:px-6 py-4">
         <div className="flex flex-col xl:flex-row items-start gap-6">
-          {/* Left / Primary Column: Selected Team Command Strip + 26-Team Control Deck Grid */}
+          {/* Left / Primary Column */}
           <div className="w-full flex-1 min-w-0">
             {/* Active Selected Team Quick Command Bar */}
             {selectedTeam && (
@@ -587,9 +321,9 @@ export default function ControlDeckApp() {
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-400">
-                      Keyboard: Press <code>+</code>/<code>=</code> for +1 KP,{' '}
-                      <code>-</code> for -1 KP, or type placement{' '}
-                      <code>0–26</code> + <code>Enter</code>
+                      Hotkeys: <code>A–Z</code> Select · <code>+</code>/
+                      <code>=</code> +1 KP · <code>-</code> -1 KP ·{' '}
+                      <code>0–26 + Enter</code> POS · <code>Ctrl+K</code> Search
                     </p>
                   </div>
                 </div>
@@ -649,152 +383,531 @@ export default function ControlDeckApp() {
                     onClick={() => setPlacement(selectedTeam.Key, 0)}
                     className="rounded border border-emerald-500/40 bg-emerald-950/40 px-2.5 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-900/60 disabled:opacity-40"
                   >
-                    Reset Alive (POS 0)
+                    Reset Alive
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Toolbar Above Team Grid */}
+            {/* Workspace View Tabs + Search (Ctrl+K) & Filters Bar */}
             <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="deck-display-font text-xl font-bold tracking-wide text-white">
-                  TOURNAMENT SQUAD SLOTS (A–Z · 26 TEAMS)
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Selected Slot:{' '}
-                  <strong className="deck-mono-font text-cyan-400">
-                    [{selectedSlotKey}]
-                  </strong>
-                  <span aria-hidden="true" className="mx-1.5">
-                    ·
-                  </span>
-                  <span>
-                    {aliveSquadCount}/{teams.length || 26} Squads Alive
-                  </span>
-                  <span aria-hidden="true" className="mx-1.5">
-                    ·
-                  </span>
-                  <span>{totalAlivePlayers}/104 Players Active</span>
-                </p>
-              </div>
-
-              {/* Sort Order, Filter & Search Controls */}
+              {/* Primary Workspace Tabs */}
               <div className="flex flex-wrap items-center gap-2">
                 <div
-                  className="flex items-center gap-1 rounded border border-slate-800 bg-[#0d121c] p-1"
-                  role="group"
-                  aria-label="Sort Team Grid"
+                  className="flex flex-wrap items-center gap-1 rounded border border-slate-800 bg-[#0d121c] p-1"
+                  role="tablist"
+                  aria-label="Operator Workspace Views"
                 >
                   <button
                     type="button"
-                    onClick={() => setSortOrder('SLOT_AZ')}
-                    className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                      sortOrder === 'SLOT_AZ'
-                        ? 'bg-slate-800 text-cyan-300'
-                        : 'text-slate-400 hover:text-slate-200'
+                    role="tab"
+                    aria-selected={workspaceTab === 'SQUADS'}
+                    data-testid="tab-squad-slots"
+                    onClick={() => setWorkspaceTab('SQUADS')}
+                    className={`rounded px-3 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                      workspaceTab === 'SQUADS'
+                        ? 'bg-cyan-400 text-slate-950'
+                        : 'text-slate-300 hover:text-white'
                     }`}
                   >
-                    Slot A–Z
+                    Squad Slots ({teams.length || 26})
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSortOrder('LEADERBOARD')}
-                    className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
-                      sortOrder === 'LEADERBOARD'
-                        ? 'bg-slate-800 text-amber-300'
-                        : 'text-slate-400 hover:text-slate-200'
+                    role="tab"
+                    aria-selected={workspaceTab === 'TOURNAMENT'}
+                    data-testid="tab-tournament-standings"
+                    onClick={() => setWorkspaceTab('TOURNAMENT')}
+                    className={`rounded px-3 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                      workspaceTab === 'TOURNAMENT'
+                        ? 'bg-cyan-400 text-slate-950'
+                        : 'text-slate-300 hover:text-white'
                     }`}
                   >
-                    Standings Rank
+                    Tournament Standings (
+                    {tournamentStandings?.totalMatchesCounted || 1}{' '}
+                    {(tournamentStandings?.totalMatchesCounted || 1) === 1
+                      ? 'Match'
+                      : 'Matches'}
+                    )
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={workspaceTab === 'FINAL_GRAPHIC'}
+                    data-testid="tab-final-graphic"
+                    onClick={() => setWorkspaceTab('FINAL_GRAPHIC')}
+                    className={`rounded px-3 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                      workspaceTab === 'FINAL_GRAPHIC'
+                        ? 'bg-amber-400 text-slate-950'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    End-of-Match Graphic
                   </button>
                 </div>
 
-                <div
-                  className="flex items-center gap-1 rounded border border-slate-800 bg-[#0d121c] p-1"
-                  role="group"
-                  aria-label="Filter Teams by Status"
-                >
-                  {[
-                    { id: 'ALL', label: `All (${teams.length})` },
-                    { id: 'ALIVE', label: `Alive (${aliveSquadCount})` },
-                    {
-                      id: 'ELIMINATED',
-                      label: `Placed (${teams.length - aliveSquadCount})`,
-                    },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setStatusFilter(tab.id)}
-                      className={`rounded px-2.5 py-1 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-                        statusFilter === tab.id
-                          ? 'bg-slate-800 text-white'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
+                <span className="text-xs text-slate-400 hidden 2xl:inline whitespace-nowrap">
+                  {aliveSquadCount}/{teams.length || 26} Alive ·{' '}
+                  {totalAlivePlayers} Players
+                </span>
+              </div>
+
+              {/* Sort Order, Status Filter, Fuzzy Search (Ctrl+K) & Monitor Toggle */}
+              <div className="flex flex-wrap items-center gap-2">
+                {workspaceTab === 'SQUADS' && (
+                  <>
+                    <div
+                      className="flex items-center gap-1 rounded border border-slate-800 bg-[#0d121c] p-1"
+                      role="group"
+                      aria-label="Sort Team Grid"
                     >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+                      <button
+                        type="button"
+                        onClick={() => setSortOrder('SLOT_AZ')}
+                        className={`rounded px-2 py-1 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                          sortOrder === 'SLOT_AZ'
+                            ? 'bg-slate-800 text-cyan-300'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Slot A–Z
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSortOrder('LEADERBOARD')}
+                        className={`rounded px-2 py-1 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                          sortOrder === 'LEADERBOARD'
+                            ? 'bg-slate-800 text-amber-300'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Standings
+                      </button>
+                    </div>
 
-                <div>
+                    <div
+                      className="flex items-center gap-1 rounded border border-slate-800 bg-[#0d121c] p-1"
+                      role="group"
+                      aria-label="Filter Teams by Status"
+                    >
+                      {[
+                        { id: 'ALL', label: `All (${teams.length})` },
+                        { id: 'ALIVE', label: `Alive (${aliveSquadCount})` },
+                        {
+                          id: 'ELIMINATED',
+                          label: `Placed (${teams.length - aliveSquadCount})`,
+                        },
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setStatusFilter(tab.id)}
+                          className={`rounded px-2 py-1 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                            statusFilter === tab.id
+                              ? 'bg-slate-800 text-white'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                <div className="relative">
                   <label htmlFor="team-search-input" className="sr-only">
-                    Search Teams or Players
+                    Search (Ctrl+K)
                   </label>
                   <input
+                    ref={searchInputRef}
                     id="team-search-input"
+                    data-testid="team-search-input"
                     type="search"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Filter team, slot A-Z, or player..."
-                    className="w-52 rounded border border-slate-800 bg-[#0d121c] px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      if (workspaceTab !== 'SQUADS') {
+                        setWorkspaceTab('SQUADS');
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        if (searchQuery) {
+                          setSearchQuery('');
+                        } else {
+                          e.currentTarget.blur();
+                        }
+                      }
+                    }}
+                    placeholder="Search (Ctrl+K)"
+                    className="w-48 sm:w-56 rounded border border-slate-700 bg-[#0d121c] px-3 py-1.5 text-xs text-white placeholder-slate-400 focus:border-cyan-400 focus:outline-none"
                   />
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowOverlayMonitor((prev) => !prev)}
+                  className="rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:border-slate-500 hover:text-white transition-colors whitespace-nowrap shrink-0"
+                >
+                  {showOverlayMonitor ? 'Hide Preview' : 'Show Preview'}
+                </button>
               </div>
             </div>
 
-            {/* Responsive Two-Column 26-Team Grid */}
-            {filteredTeams.length === 0 ? (
-              <div className="rounded-md border border-slate-800 bg-[#101622] p-8 text-center">
-                <p className="text-sm font-semibold text-slate-200">
-                  No teams match the current filter criteria.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStatusFilter('ALL');
-                    setSearchQuery('');
-                  }}
-                  className="mt-3 rounded bg-cyan-500 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-cyan-400"
-                >
-                  Reset Filters
-                </button>
-              </div>
-            ) : (
+            {/* TAB 1: 26-Team Interactive Grid */}
+            {workspaceTab === 'SQUADS' && (
+              <>
+                {filteredTeams.length === 0 ? (
+                  <div className="rounded-md border border-slate-800 bg-[#101622] p-8 text-center">
+                    <p className="text-sm font-semibold text-slate-200">
+                      No teams match &ldquo;{searchQuery}&rdquo; under the
+                      current filter.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusFilter('ALL');
+                        setSearchQuery('');
+                      }}
+                      className="mt-3 rounded bg-cyan-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-cyan-300"
+                    >
+                      Clear Search &amp; Filters
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    data-testid="team-cards-grid"
+                    className="grid grid-cols-1 md:grid-cols-2 gap-3"
+                  >
+                    {filteredTeams.map((team) => {
+                      const key = team.Key || team.slotKey;
+                      return (
+                        <TeamCard
+                          key={key}
+                          team={team}
+                          leaderboardRank={rankByKey.get(key)}
+                          isSelected={selectedSlotKey === key}
+                          isHeld={heldTeamKey === key}
+                          isLocked={isCompleted}
+                          onSelect={selectTeam}
+                          onIncrementKill={incrementKill}
+                          onDecrementKill={decrementKill}
+                          onSetPlacement={setPlacement}
+                          onAdjustPlacement={adjustPlacement}
+                          onUpdateRoster={updateTeamRoster}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* TAB 2: Cumulative Tournament Standings across Completed & Active Rounds */}
+            {workspaceTab === 'TOURNAMENT' && (
               <div
-                data-testid="team-cards-grid"
-                className="grid grid-cols-1 md:grid-cols-2 gap-3"
+                data-testid="tournament-aggregation-view"
+                className="rounded-md border border-slate-800 bg-[#101622] overflow-hidden"
               >
-                {filteredTeams.map((team) => {
-                  const key = team.Key || team.slotKey;
-                  return (
-                    <TeamCard
-                      key={key}
-                      team={team}
-                      leaderboardRank={rankByKey.get(key)}
-                      isSelected={selectedSlotKey === key}
-                      isHeld={heldTeamKey === key}
-                      isLocked={isCompleted}
-                      onSelect={selectTeam}
-                      onIncrementKill={incrementKill}
-                      onDecrementKill={decrementKill}
-                      onSetPlacement={setPlacement}
-                      onAdjustPlacement={adjustPlacement}
-                      onUpdateRoster={updateTeamRoster}
-                    />
-                  );
-                })}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-[#0d121c] px-4 py-3">
+                  <div>
+                    <h2 className="deck-display-font text-lg font-bold tracking-wide text-white">
+                      CUMULATIVE TOURNAMENT STANDINGS ({activeGame})
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Aggregated across{' '}
+                      <strong className="text-cyan-300">
+                        {tournamentStandings?.totalMatchesCounted || 1}
+                      </strong>{' '}
+                      deduplicated match file(s):{' '}
+                      <span className="deck-mono-font text-slate-300">
+                        {tournamentStandings?.countedMatchIds?.length > 0
+                          ? tournamentStandings.countedMatchIds.join(', ')
+                          : matchState?.matchId}
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateBroadcastMeta({
+                          overlayViewMode:
+                            overlayViewMode === OVERLAY_VIEW_MODES.OVERALL
+                              ? OVERLAY_VIEW_MODES.MATCH
+                              : OVERLAY_VIEW_MODES.OVERALL,
+                        })
+                      }
+                      className="rounded bg-cyan-400 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-cyan-300"
+                    >
+                      {overlayViewMode === OVERLAY_VIEW_MODES.OVERALL
+                        ? 'Switch Overlay to Live Match'
+                        : 'Show Overall Standings on Overlay'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportTournamentStandingsCsv}
+                      className="rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:text-white"
+                    >
+                      Export Standings CSV
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 bg-[#090d14] text-[11px] font-semibold text-slate-400">
+                        <th className="py-2.5 px-3">RANK</th>
+                        <th className="py-2.5 px-3">TEAM</th>
+                        <th className="py-2.5 px-2 text-right">MATCHES</th>
+                        <th className="py-2.5 px-2 text-right">WINS (#1)</th>
+                        <th className="py-2.5 px-3 text-right border-l border-slate-800/80 text-slate-300">
+                          PRIOR ROUNDS (KP / PP / TT)
+                        </th>
+                        <th className="py-2.5 px-3 text-right border-l border-slate-800/80 text-cyan-300">
+                          CURRENT {matchState?.matchId} (KP / PP / TT)
+                        </th>
+                        <th className="py-2.5 px-3 text-right border-l border-slate-800/80 text-amber-300">
+                          TOTAL KP
+                        </th>
+                        <th className="py-2.5 px-3 text-right text-amber-300">
+                          TOTAL PP
+                        </th>
+                        <th className="py-2.5 px-3 text-right text-amber-400 font-bold">
+                          OVERALL TOTAL
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/70 deck-mono-font">
+                      {(tournamentStandings?.standings || []).map((row) => (
+                        <tr
+                          key={row.Key}
+                          data-testid={`tournament-row-${row.Key}`}
+                          className="hover:bg-slate-900/60"
+                        >
+                          <td className="py-2 px-3 font-bold text-white">
+                            #{String(row.overallRank).padStart(2, '0')}
+                          </td>
+                          <td className="py-2 px-3 font-sans">
+                            <span className="deck-mono-font text-cyan-400 font-bold mr-1.5">
+                              [{row.Key}]
+                            </span>
+                            <span className="font-semibold text-white">
+                              {row.TeamName}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-right text-slate-300">
+                            {row.matchesPlayed}
+                          </td>
+                          <td className="py-2 px-2 text-right font-semibold text-amber-300">
+                            {row.winsCount}
+                          </td>
+                          <td
+                            data-testid={`tournament-row-${row.Key}-prior`}
+                            className="py-2 px-3 text-right border-l border-slate-800/60 text-slate-400"
+                          >
+                            {row.priorKP} / {row.priorPP} /{' '}
+                            <strong className="text-slate-200">
+                              {row.priorTT}
+                            </strong>
+                          </td>
+                          <td
+                            data-testid={`tournament-row-${row.Key}-current`}
+                            className="py-2 px-3 text-right border-l border-slate-800/60 text-cyan-200"
+                          >
+                            {row.currentKP} / {row.currentPP} /{' '}
+                            <strong className="text-cyan-300">
+                              {row.currentTT}
+                            </strong>
+                          </td>
+                          <td className="py-2 px-3 text-right border-l border-slate-800/60 text-slate-200">
+                            {String(row.totalKP).padStart(2, '0')}
+                          </td>
+                          <td className="py-2 px-3 text-right text-slate-200">
+                            {String(row.totalPP).padStart(2, '0')}
+                          </td>
+                          <td
+                            data-testid={`tournament-row-${row.Key}-total`}
+                            className="py-2 px-3 text-right font-bold text-amber-400 text-sm"
+                          >
+                            {String(row.totalTT).padStart(2, '0')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: End-of-Match Broadcast Final Standings Graphic Controller */}
+            {workspaceTab === 'FINAL_GRAPHIC' && (
+              <div
+                data-testid="end-of-match-controller-view"
+                className="rounded-md border border-slate-800 bg-[#101622] p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                  <div>
+                    <h2 className="deck-display-font text-lg font-bold tracking-wide text-white">
+                      END-OF-MATCH FINAL STANDINGS GRAPHIC ({matchState?.matchId})
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Broadcast-ready podium and final match rankings driven by
+                      saved match state.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="push-final-graphic-btn"
+                      onClick={() =>
+                        updateBroadcastMeta({
+                          overlayViewMode: OVERLAY_VIEW_MODES.END_OF_MATCH,
+                        })
+                      }
+                      className="rounded bg-amber-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300"
+                    >
+                      Show Final Standings on Overlay
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="return-live-overlay-btn"
+                      onClick={() =>
+                        updateBroadcastMeta({
+                          overlayViewMode: OVERLAY_VIEW_MODES.MATCH,
+                        })
+                      }
+                      className="rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-cyan-400/60 hover:text-white"
+                    >
+                      Return to Live Overlay
+                    </button>
+                  </div>
+                </div>
+
+                {/* Top 3 Podium Summary */}
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {leaderboard.slice(0, 3).map((team, idx) => (
+                    <div
+                      key={team.Key}
+                      className={`rounded-md border p-3.5 ${
+                        idx === 0
+                          ? 'border-amber-400/70 bg-amber-950/25'
+                          : idx === 1
+                          ? 'border-cyan-400/50 bg-cyan-950/20'
+                          : 'border-slate-700 bg-[#0c121e]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 text-xs font-bold">
+                        <span
+                          className={`truncate ${
+                            idx === 0
+                              ? 'text-amber-400'
+                              : idx === 1
+                              ? 'text-cyan-300'
+                              : 'text-amber-200'
+                          }`}
+                        >
+                          #{idx + 1}{' '}
+                          {idx === 0
+                            ? 'MATCH WINNER'
+                            : idx === 1
+                            ? 'RUNNER-UP'
+                            : 'THIRD PLACE'}
+                        </span>
+                        <span className="deck-mono-font text-slate-400 whitespace-nowrap shrink-0">
+                          Slot [{team.Key}]
+                        </span>
+                      </div>
+                      <div className="mt-1.5 text-base font-bold text-white truncate">
+                        {team.TeamName}
+                      </div>
+                      <div className="mt-1 text-[11px] text-slate-400 truncate">
+                        {[
+                          team.Player1,
+                          team.Player2,
+                          team.Player3,
+                          team.Player4,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2 deck-mono-font text-xs">
+                        <span className="text-slate-300 whitespace-nowrap">
+                          KP: <strong>{team.KP}</strong> · PP:{' '}
+                          <strong>{team.PP}</strong>
+                        </span>
+                        <span className="text-sm font-bold text-amber-400 whitespace-nowrap">
+                          TOTAL: {team.TT} PTS
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Full Final Standings Table */}
+                <div className="mt-4 overflow-x-auto rounded border border-slate-800">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 bg-[#090d14] text-[11px] font-semibold text-slate-400">
+                        <th className="py-2 px-3">RANK</th>
+                        <th className="py-2 px-3">TEAM</th>
+                        <th className="py-2 px-3">ROSTER</th>
+                        <th className="py-2 px-3 text-right">PLACEMENT</th>
+                        <th className="py-2 px-3 text-right">KILL PTS (KP)</th>
+                        <th className="py-2 px-3 text-right">PLACE PTS (PP)</th>
+                        <th className="py-2 px-3 text-right text-amber-400">
+                          TOTAL PTS (TT)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/70 deck-mono-font">
+                      {leaderboard.map((team, idx) => (
+                        <tr key={team.Key} className="hover:bg-slate-900/50">
+                          <td className="py-1.5 px-3 font-bold text-white">
+                            #{String(idx + 1).padStart(2, '0')}
+                          </td>
+                          <td className="py-1.5 px-3 font-sans">
+                            <span className="deck-mono-font text-cyan-400 font-bold mr-1.5">
+                              [{team.Key}]
+                            </span>
+                            <span className="font-semibold text-white">
+                              {team.TeamName}
+                            </span>
+                          </td>
+                          <td className="py-1.5 px-3 font-sans text-slate-400">
+                            {[
+                              team.Player1,
+                              team.Player2,
+                              team.Player3,
+                              team.Player4,
+                            ]
+                              .filter(Boolean)
+                              .join(', ')}
+                          </td>
+                          <td className="py-1.5 px-3 text-right text-slate-300">
+                            {team.pos === 0
+                              ? 'ALIVE'
+                              : `#${String(team.pos).padStart(2, '0')}`}
+                          </td>
+                          <td className="py-1.5 px-3 text-right text-cyan-300">
+                            {String(team.KP).padStart(2, '0')}
+                          </td>
+                          <td className="py-1.5 px-3 text-right text-slate-200">
+                            {String(team.PP).padStart(2, '0')}
+                          </td>
+                          <td className="py-1.5 px-3 text-right font-bold text-amber-400">
+                            {String(team.TT).padStart(2, '0')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
@@ -811,52 +924,51 @@ export default function ControlDeckApp() {
                     BROADCAST OVERLAY VIEWPORT (OBS CAPTURE)
                   </h2>
                   <p className="text-[11px] text-slate-400">
-                    Frameless · Transparent (#00000000) · Live Authoritative Sync
+                    Frameless · Transparent (#00000000) · Mode:{' '}
+                    <strong className="text-amber-300">{overlayViewMode}</strong>
                   </p>
                 </div>
-                <span className="deck-mono-font text-[11px] font-semibold text-cyan-400">
-                  {overlayAlive
-                    ? overlayVisible
-                      ? 'ACTIVE'
-                      : 'HIDDEN'
-                    : 'CLOSED'}
-                </span>
+                <a
+                  href="./overlay.html"
+                  className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-cyan-400/60 hover:text-white whitespace-nowrap shrink-0"
+                >
+                  Open Overlay URL
+                </a>
               </div>
 
               {/* Checkerboard Alpha Transparency Verification Stage */}
-              <div className="obs-transparency-stage mt-3 rounded border border-slate-800/90 p-2.5">
+              <div className="obs-transparency-stage mt-3 rounded border border-slate-800/90 p-2">
                 {!overlayAlive ? (
                   <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
                     <p className="text-xs font-semibold text-rose-300">
                       Broadcast Overlay Viewport Window is Closed
                     </p>
                     <p className="mt-1 text-[11px] text-slate-400">
-                      Connection status updated to DISCONNECTED. Reopen the
-                      overlay to resume live HUD rendering.
+                      Reopen the overlay to resume live HUD rendering.
                     </p>
                     <button
                       type="button"
                       onClick={handleReopenOverlay}
                       className="mt-3 rounded border border-emerald-500/50 bg-emerald-950/80 px-3.5 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-900"
                     >
-                      Reopen Overlay Window
+                      Reopen Overlay
                     </button>
                   </div>
                 ) : !overlayVisible ? (
                   <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
                     <p className="text-xs font-semibold text-amber-300">
-                      Overlay Window Hidden for Troubleshooting
+                      Overlay Window Hidden
                     </p>
                     <p className="mt-1 text-[11px] text-slate-400">
-                      IPC channel remains active in the background. Click Show
-                      Overlay to restore OBS capture visibility.
+                      IPC synchronization remains active. Click Show Overlay to
+                      restore OBS capture visibility.
                     </p>
                     <button
                       type="button"
                       onClick={handleToggleOverlay}
                       className="mt-3 rounded border border-cyan-500/50 bg-cyan-950/80 px-3.5 py-1.5 text-xs font-semibold text-cyan-300 hover:bg-cyan-900"
                     >
-                      Show Overlay Window
+                      Show Overlay
                     </button>
                   </div>
                 ) : (

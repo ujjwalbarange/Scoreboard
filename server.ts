@@ -92,6 +92,10 @@ async function startServer() {
           return res.json(
             await matchManager.setActiveGame(payload?.game ?? 'BGMI')
           );
+        case 'updateBroadcastMeta':
+          return res.json(
+            await matchManager.updateBroadcastMeta(payload || {})
+          );
         case 'selectTeam':
           return res.json(await matchManager.selectTeam(payload?.key ?? null));
         case 'incrementKill':

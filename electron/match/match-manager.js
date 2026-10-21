@@ -29,6 +29,7 @@ import {
 import { CsvController } from './csv-controller.js';
 import { MatchEngine } from './match-engine.js';
 import { normalizeGameId } from './scoring-engine.js';
+import { computeTournamentAggregation } from './tournament-aggregator.js';
 import { seedAndMigrateWritableData } from '../utils/runtime-paths.js';
 
 export class MatchManager {
@@ -85,6 +86,15 @@ export class MatchManager {
     await this.csvController.ensureDirectoryAndTemplates();
     const existingMatches = await this.csvController.listMatchFiles();
     const savedMeta = await this._readCompanionMeta();
+
+    // Restore persisted tournament title, stage label, and overlay view mode if present
+    if (savedMeta && typeof savedMeta === 'object') {
+      this.engine.updateBroadcastMeta({
+        tournamentTitle: savedMeta.tournamentTitle,
+        stageLabel: savedMeta.stageLabel,
+        overlayViewMode: savedMeta.overlayViewMode,
+      });
+    }
 
     let targetFilePath = null;
     let targetGame = normalizeGameId(this.config?.defaultGame || 'BGMI');
@@ -145,19 +155,60 @@ export class MatchManager {
   }
 
   /**
-   * Returns the complete authoritative state including available match files list.
+   * Returns the complete authoritative state including available match files list
+   * and deduplicated cumulative tournament standings across rounds.
    */
   async getFullState() {
     const matchesList = await this.csvController.listMatchFiles();
+    const savedMeta = await this._readCompanionMeta();
     const snapshot = this.engine.getSnapshot();
+
+    // Load saved matches for the active game to compute cumulative tournament standings
+    const savedMatchRecords = [];
+    for (const m of matchesList) {
+      const metaEntry = savedMeta?.matches?.[m.matchId];
+      const matchGame = metaEntry?.game
+        ? normalizeGameId(metaEntry.game)
+        : m.game;
+      if (matchGame !== snapshot.activeGame) continue;
+      if (m.matchId === snapshot.matchId) continue;
+
+      const loaded = await this.csvController.loadCsvFile(
+        m.filePath,
+        matchGame,
+        this.config
+      );
+      if (loaded.ok && loaded.teams) {
+        savedMatchRecords.push({
+          matchId: m.matchId,
+          game: matchGame,
+          roundNumber: metaEntry?.roundNumber || 1,
+          matchStatus: metaEntry?.matchStatus || MATCH_STATUS.COMPLETED,
+          teams: loaded.teams,
+        });
+      }
+    }
+
+    const tournamentStandings = computeTournamentAggregation({
+      activeGame: snapshot.activeGame,
+      activeMatchId: snapshot.matchId,
+      activeMatchStatus: snapshot.matchStatus,
+      activeTeams: snapshot.teams,
+      savedMatches: savedMatchRecords,
+    });
+
     return {
       ...snapshot,
       availableMatches: matchesList.map((m) => ({
         matchId: m.matchId,
         fileName: m.fileName,
-        game: m.game,
+        game: savedMeta?.matches?.[m.matchId]?.game || m.game,
+        roundNumber: savedMeta?.matches?.[m.matchId]?.roundNumber || 1,
+        matchStatus:
+          savedMeta?.matches?.[m.matchId]?.matchStatus || MATCH_STATUS.LIVE,
         updatedAt: m.updatedAt,
       })),
+      tournamentStandings,
     };
   }
 
@@ -295,6 +346,22 @@ export class MatchManager {
       res.snapshot.lastEvent.message
     );
     return this._persistCurrentMatch(res.snapshot.lastEvent.message);
+  }
+
+  async updateBroadcastMeta(payload) {
+    const res = this.engine.updateBroadcastMeta(payload);
+    if (!res.ok) {
+      this._notify('error', 'BROADCAST_META_ERROR', res.error);
+      return res;
+    }
+    await this._writeCompanionMeta();
+    this._notify(
+      'info',
+      'BROADCAST_META_UPDATED',
+      res.snapshot.lastEvent.message
+    );
+    const snapshot = await this._broadcastCurrentState();
+    return { ok: true, snapshot };
   }
 
   async incrementKill(key) {
@@ -769,6 +836,9 @@ export class MatchManager {
       const updated = {
         ...current,
         activeMatchId: matchId,
+        tournamentTitle: this.engine.state.tournamentTitle,
+        stageLabel: this.engine.state.stageLabel,
+        overlayViewMode: this.engine.state.overlayViewMode,
         updatedAt: new Date().toISOString(),
         matches: {
           ...(current.matches || {}),

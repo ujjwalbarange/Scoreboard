@@ -23,7 +23,11 @@ function isEditableElement(target) {
  * Authoritative Match State & Global Keyboard Control Hook
  * Phase 2: Esports Broadcast Controller & Live Overlay System
  */
-export function useMatchState({ onOperationalLog }) {
+export function useMatchState({
+  onOperationalLog,
+  onFocusSearch,
+  onBroadcastCue,
+}) {
   const [matchState, setMatchState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [heldTeamKey, setHeldTeamKey] = useState(null);
@@ -126,10 +130,29 @@ export function useMatchState({ onOperationalLog }) {
         );
       } else if (res?.error) {
         showBanner('error', res.error);
+        onBroadcastCue?.('ERROR');
       }
       return res;
     },
-    [applySnapshot, showBanner]
+    [applySnapshot, onBroadcastCue, showBanner]
+  );
+
+  const updateBroadcastMeta = useCallback(
+    async (payload) => {
+      const controller = getBroadcastController();
+      const res = await controller.updateBroadcastMeta(payload);
+      if (res?.ok && res.snapshot) {
+        applySnapshot(res.snapshot);
+        if (payload?.overlayViewMode === 'END_OF_MATCH') {
+          onBroadcastCue?.('MATCH_FINAL');
+        }
+      } else if (res?.error) {
+        showBanner('error', res.error);
+        onBroadcastCue?.('ERROR');
+      }
+      return res;
+    },
+    [applySnapshot, onBroadcastCue, showBanner]
   );
 
   const selectTeam = useCallback(
@@ -212,12 +235,16 @@ export function useMatchState({ onOperationalLog }) {
       if (res?.ok && res.snapshot) {
         applySnapshot(res.snapshot);
         showBanner('success', res.snapshot.lastEvent?.message || 'Placement updated.');
+        if (check.position === 1) {
+          onBroadcastCue?.('WINNER');
+        }
       } else if (res?.error) {
         showBanner('error', res.error);
+        onBroadcastCue?.('ERROR');
       }
       return res;
     },
-    [applySnapshot, showBanner]
+    [applySnapshot, onBroadcastCue, showBanner]
   );
 
   const adjustPlacement = useCallback(
@@ -354,15 +381,17 @@ export function useMatchState({ onOperationalLog }) {
         const res = await controller.createNextRound(options);
         if (res?.ok && res.snapshot) {
           applySnapshot(res.snapshot);
+          onBroadcastCue?.('ROUND_START');
         } else if (res?.error) {
           showBanner('error', res.error);
+          onBroadcastCue?.('ERROR');
         }
         return res;
       } finally {
         setIsBusy(false);
       }
     },
-    [applySnapshot, showBanner]
+    [applySnapshot, onBroadcastCue, showBanner]
   );
 
   const completeMatch = useCallback(async () => {
@@ -370,11 +399,13 @@ export function useMatchState({ onOperationalLog }) {
     const res = await controller.completeMatch();
     if (res?.ok && res.snapshot) {
       applySnapshot(res.snapshot);
+      onBroadcastCue?.('MATCH_FINAL');
     } else if (res?.error) {
       showBanner('error', res.error);
+      onBroadcastCue?.('ERROR');
     }
     return res;
-  }, [applySnapshot, showBanner]);
+  }, [applySnapshot, onBroadcastCue, showBanner]);
 
   const reopenMatch = useCallback(async () => {
     const controller = getBroadcastController();
@@ -390,6 +421,18 @@ export function useMatchState({ onOperationalLog }) {
   // 3. Global Keyboard State Machine (keydown / keyup)
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Global Search Shortcut: Ctrl+K or Cmd+K works anywhere (even inside inputs)
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'k'
+      ) {
+        e.preventDefault();
+        onFocusSearch?.();
+        return;
+      }
+
       // Never intercept typing inside inputs, textareas, selects, or contentEditable
       if (isEditableElement(e.target)) {
         return;
@@ -527,6 +570,7 @@ export function useMatchState({ onOperationalLog }) {
     adjustPlacement,
     undoLastAction,
     showBanner,
+    onFocusSearch,
   ]);
 
   return {
@@ -550,6 +594,7 @@ export function useMatchState({ onOperationalLog }) {
       return setPlacement(activeKey, Number(rawDigits));
     },
     setActiveGame,
+    updateBroadcastMeta,
     selectTeam,
     incrementKill,
     decrementKill,
