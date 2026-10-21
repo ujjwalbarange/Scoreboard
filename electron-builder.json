@@ -1,0 +1,74 @@
+{
+  "appId": "com.esports.broadcast.controller",
+  "productName": "Esports Broadcast Controller",
+  "copyright": "Copyright © 2026 Esports Broadcast Controller",
+  "asar": true,
+  "directories": {
+    "output": "dist-release",
+    "buildResources": "assets"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "src/shared/**/*",
+    "tournament_config.json",
+    "matches/template_bgmi.csv",
+    "matches/template_ff.csv",
+    "package.json",
+    "!**/*.{test.ts,test.js,spec.ts,spec.js,map}",
+    "!**/.env*",
+    "!matches/Match_*.csv",
+    "!matches/.match_meta.json",
+    "!.playwright-cli/**/*",
+    "!server.ts"
+  ],
+  "extraResources": [
+    {
+      "from": "tournament_config.json",
+      "to": "tournament_config.json"
+    },
+    {
+      "from": "matches/template_bgmi.csv",
+      "to": "templates/template_bgmi.csv"
+    },
+    {
+      "from": "matches/template_ff.csv",
+      "to": "templates/template_ff.csv"
+    },
+    {
+      "from": "assets/logos",
+      "to": "assets/logos"
+    },
+    {
+      "from": "assets/sfx",
+      "to": "assets/sfx"
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowElevation": true,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": "always",
+    "createStartMenuShortcut": true,
+    "shortcutName": "Esports Broadcast Controller",
+    "uninstallDisplayName": "${productName} ${version}",
+    "deleteAppDataOnUninstall": false,
+    "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+  },
+  "portable": {
+    "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
+  }
+}

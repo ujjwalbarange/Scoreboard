@@ -1,0 +1,173 @@
+name: Build Windows EXE & Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      build_reason:
+        description: 'Optional note for this manual Windows EXE build'
+        required: false
+        default: 'Manual operator build from GitHub Actions UI'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-exe-build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-windows-x64:
+    name: Build & Verify Windows x64 Installer (.exe)
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify lockfile and install dependencies reproducibly
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Checking repository lockfiles..."
+          if (Test-Path "package-lock.json") {
+            Write-Host "Found package-lock.json — running reproducible 'npm ci --legacy-peer-deps'..."
+            npm ci --legacy-peer-deps
+          } elseif (Test-Path "bun.lock") {
+            Write-Host "Found bun.lock — installing dependencies with npm --legacy-peer-deps..."
+            npm install --legacy-peer-deps
+          } else {
+            Write-Error "Missing dependency lockfile (expected package-lock.json or bun.lock)."
+            exit 1
+          }
+
+      - name: Run TypeScript typecheck (lint)
+        run: npm run lint
+
+      - name: Run automated unit & packaging tests
+        run: npm test
+
+      - name: Build production dual-window React/Vite frontend
+        run: npm run build
+
+      - name: Validate packaging configuration and frontend build artifacts
+        run: npm run pack:check
+
+      - name: Package Windows x64 NSIS Installer and Portable EXE
+        shell: pwsh
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Packaging Esports Broadcast Controller for Windows x64 (NSIS Setup + Portable EXE)..."
+          npm run dist:win
+
+      - name: Verify generated .exe installers and write build-info metadata
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          node scripts/validate-packaging.js --verify-exe
+          Write-Host "Contents of dist-release/:"
+          Get-ChildItem -Path "dist-release" -File | Format-Table Name, Length, LastWriteTime -AutoSize
+
+      - name: Upload Windows x64 Installer & Portable EXE Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: esports-broadcast-controller-windows-x64
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            dist-release/*.exe
+            dist-release/*.blockmap
+            dist-release/latest.yml
+            dist-release/build-info.json
+            dist-release/BUILD_INFO.txt
+
+  publish-github-release:
+    name: Publish GitHub Release (Version Tags v*.*.*)
+    needs: build-windows-x64
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+
+      - name: Download verified Windows x64 build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: esports-broadcast-controller-windows-x64
+          path: release-assets
+
+      - name: Verify downloaded .exe assets before creating GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Verifying downloaded Windows executables in release-assets/..."
+          ls -lh release-assets/
+          EXE_COUNT=$(find release-assets -maxdepth 1 -type f -name "*.exe" | wc -l)
+          if [ "$EXE_COUNT" -lt 1 ]; then
+            echo "ERROR: No .exe files found in downloaded artifact!"
+            exit 1
+          fi
+
+      - name: Generate Release Notes from build-info.json
+        id: release_notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat << 'EOF' > release-notes.md
+          ## Esports Broadcast Controller — Windows x64 Release (`${{ github.ref_name }}`)
+
+          ### Included Windows Executables
+          - **NSIS Setup Installer (`*-Setup-*-x64.exe`)**: Standard Windows desktop installer with installation directory selection, Start Menu shortcut, Desktop shortcut, and uninstaller.
+          - **Portable Executable (`*-Portable-*-x64.exe`)**: Standalone single-file executable that runs without installation.
+
+          ### Build Metadata
+          - **Tag / Version**: `${{ github.ref_name }}`
+          - **Commit SHA**: `${{ github.sha }}`
+          - **Target Architecture**: `Windows x64 (win32-x64)`
+
+          ### Data Persistence & Upgrade Safety
+          - Live tournament CSV match files (`Match_01_BGMI.csv`, `Match_01_FF.csv`, etc.) and configuration overrides are stored in `%APPDATA%\Esports Broadcast Controller\matches`.
+          - Installing an update or reinstalling the application **never deletes** existing match CSV files.
+
+          ### Note on Windows SmartScreen (Unsigned Build)
+          - This build is produced automatically by GitHub Actions without a paid EV/OV code-signing certificate.
+          - When launching the installer on Windows for the first time, Windows Defender SmartScreen may display **"Windows protected your PC"**. Click **More info** → **Run anyway** to proceed.
+          EOF
+
+      - name: Create GitHub Release and upload Windows .exe assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Esports Broadcast Controller ${{ github.ref_name }} (Windows x64)
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            release-assets/*.exe
+            release-assets/*.blockmap
+            release-assets/latest.yml
+            release-assets/build-info.json
+            release-assets/BUILD_INFO.txt

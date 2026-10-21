@@ -1,0 +1,6 @@
+{
+  "name": "Esports Broadcast Controller",
+  "description": "Production-grade dual-window Electron and React esports broadcast controller and live OBS leaderboard overlay system for BGMI and Free Fire tournaments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

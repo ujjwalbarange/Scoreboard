@@ -1,0 +1,111 @@
+{
+  "_comment": "Phase 1 placeholder configuration. Values represent baseline template rules for Phase 2/3 consumption and must be verified against official tournament rulebooks before live broadcast use.",
+  "schemaVersion": "1.0.0-phase1",
+  "defaultGame": "BGMI",
+  "tournamentTitle": "PRO SERIES INVITATIONAL S4",
+  "organizerName": "APEX BROADCAST PRODUCTIONS",
+  "defaultStageLabel": "Week 01 Day 01",
+  "defaultMatchNumber": 1,
+  "overlayTheme": {
+    "preset": "obsidian-cyan-gold",
+    "transparentBackground": true,
+    "primaryAccent": "#00E5FF",
+    "secondaryAccent": "#F59E0B",
+    "headerBackground": "rgba(11, 15, 25, 0.94)",
+    "rowBackground": "rgba(15, 23, 42, 0.88)",
+    "eliminatedRowOpacity": 0.48,
+    "showConnectionIndicatorInBroadcast": true,
+    "visibleTeamCount": 8,
+    "dimensions": {
+      "width": 460,
+      "height": 680
+    }
+  },
+  "keyboardBindings": {
+    "enabledInPhase1": false,
+    "teamSelectionKeys": "A-Z",
+    "killIncrementKey": "ArrowUp",
+    "killDecrementKey": "ArrowDown",
+    "toggleEliminationKey": "Delete",
+    "assignPlacementModifier": "Shift+Number",
+    "triggerOverlayTestKey": "F9",
+    "toggleOverlayVisibilityKey": "F10",
+    "undoLastActionKey": "Ctrl+Z"
+  },
+  "scoringRules": {
+    "BGMI": {
+      "displayName": "Battlegrounds Mobile India (BGMI)",
+      "killPoints": 1,
+      "maxTeams": 26,
+      "squadSize": 4,
+      "placementPoints": {
+        "1": 10,
+        "2": 6,
+        "3": 5,
+        "4": 4,
+        "5": 3,
+        "6": 2,
+        "7": 1,
+        "8": 1,
+        "9": 0,
+        "10": 0,
+        "11": 0,
+        "12": 0,
+        "13": 0,
+        "14": 0,
+        "15": 0,
+        "16": 0,
+        "17": 0,
+        "18": 0,
+        "19": 0,
+        "20": 0,
+        "21": 0,
+        "22": 0,
+        "23": 0,
+        "24": 0,
+        "25": 0,
+        "26": 0
+      }
+    },
+    "FREE_FIRE": {
+      "displayName": "Garena Free Fire Esports",
+      "killPoints": 1,
+      "maxTeams": 26,
+      "squadSize": 4,
+      "placementPoints": {
+        "1": 12,
+        "2": 9,
+        "3": 8,
+        "4": 7,
+        "5": 6,
+        "6": 5,
+        "7": 4,
+        "8": 3,
+        "9": 2,
+        "10": 1,
+        "11": 0,
+        "12": 0,
+        "13": 0,
+        "14": 0,
+        "15": 0,
+        "16": 0,
+        "17": 0,
+        "18": 0,
+        "19": 0,
+        "20": 0,
+        "21": 0,
+        "22": 0,
+        "23": 0,
+        "24": 0,
+        "25": 0,
+        "26": 0
+      }
+    }
+  },
+  "tieBreakerOrder": [
+    "totalWinsCount",
+    "totalPlacementPoints",
+    "totalKillPoints",
+    "mostRecentMatchPlacement"
+  ]
+}

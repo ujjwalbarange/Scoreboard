@@ -1,0 +1,14 @@
+{
+  "activeMatchId": "Match_01_BGMI",
+  "updatedAt": "2026-10-21T03:34:03.717Z",
+  "matches": {
+    "Match_01_BGMI": {
+      "matchId": "Match_01_BGMI",
+      "game": "BGMI",
+      "roundNumber": 1,
+      "matchStatus": "LIVE",
+      "filePath": "matches/Match_01_BGMI.csv",
+      "updatedAt": "2026-10-21T03:34:03.717Z"
+    }
+  }
+}
