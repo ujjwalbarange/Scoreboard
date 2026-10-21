@@ -52,6 +52,54 @@ export function isWindowUsable(win) {
 }
 
 /**
+ * Computes the current window state of the Operator Control Deck window.
+ */
+export function buildControlWindowState(controlWin) {
+  if (!isWindowUsable(controlWin)) {
+    return {
+      isMaximized: false,
+      isFullScreen: false,
+      isMinimized: false,
+      resizable: true,
+      bounds: {
+        x: 0,
+        y: 0,
+        width: WINDOW_DIMENSIONS.CONTROL_DECK.width,
+        height: WINDOW_DIMENSIONS.CONTROL_DECK.height,
+      },
+    };
+  }
+
+  return {
+    isMaximized:
+      typeof controlWin.isMaximized === 'function'
+        ? Boolean(controlWin.isMaximized())
+        : false,
+    isFullScreen:
+      typeof controlWin.isFullScreen === 'function'
+        ? Boolean(controlWin.isFullScreen())
+        : false,
+    isMinimized:
+      typeof controlWin.isMinimized === 'function'
+        ? Boolean(controlWin.isMinimized())
+        : false,
+    resizable:
+      typeof controlWin.isResizable === 'function'
+        ? Boolean(controlWin.isResizable())
+        : true,
+    bounds:
+      typeof controlWin.getBounds === 'function'
+        ? controlWin.getBounds()
+        : {
+            x: 0,
+            y: 0,
+            width: WINDOW_DIMENSIONS.CONTROL_DECK.width,
+            height: WINDOW_DIMENSIONS.CONTROL_DECK.height,
+          },
+  };
+}
+
+/**
  * Computes the current connection snapshot for the Control Deck and Overlay.
  */
 export function buildConnectionSnapshot(windowManager) {
@@ -81,6 +129,7 @@ export function buildConnectionSnapshot(windowManager) {
     status,
     mainProcessReady: true,
     controlDeckAlive: isWindowUsable(controlWin),
+    controlWindowState: buildControlWindowState(controlWin),
     overlayAlive,
     overlayVisible,
     overlayBounds: bounds,
@@ -401,6 +450,109 @@ export function registerIpcHandlers(ipcMain, windowManager, options = {}) {
       overlayBounds: overlayWin.getBounds(),
       snapshot,
     };
+  });
+
+  // =========================================================================
+  // Phase 3 Controller Window Controls (Minimize, Maximize/Restore, Fullscreen, Close)
+  // =========================================================================
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_GET_STATE, async () => {
+    const controlWin = windowManager.getControlWindow();
+    return {
+      ok: true,
+      windowState: buildControlWindowState(controlWin),
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async () => {
+    const controlWin = windowManager.getControlWindow();
+    if (!isWindowUsable(controlWin)) {
+      return { ok: false, error: 'Controller window is not available.' };
+    }
+    if (typeof controlWin.minimize === 'function') {
+      controlWin.minimize();
+    }
+    const snapshot = broadcastConnectionStatus(
+      windowManager,
+      'CONTROL_WINDOW_MINIMIZED'
+    );
+    return {
+      ok: true,
+      windowState: snapshot.controlWindowState,
+      snapshot,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE, async () => {
+    const controlWin = windowManager.getControlWindow();
+    if (!isWindowUsable(controlWin)) {
+      return { ok: false, error: 'Controller window is not available.' };
+    }
+
+    if (
+      typeof controlWin.isFullScreen === 'function' &&
+      controlWin.isFullScreen() &&
+      typeof controlWin.setFullScreen === 'function'
+    ) {
+      controlWin.setFullScreen(false);
+    } else if (
+      typeof controlWin.isMaximized === 'function' &&
+      controlWin.isMaximized()
+    ) {
+      if (typeof controlWin.unmaximize === 'function') {
+        controlWin.unmaximize();
+      } else if (typeof controlWin.restore === 'function') {
+        controlWin.restore();
+      }
+    } else if (typeof controlWin.maximize === 'function') {
+      controlWin.maximize();
+    }
+
+    const snapshot = broadcastConnectionStatus(
+      windowManager,
+      'CONTROL_WINDOW_MAXIMIZE_TOGGLED'
+    );
+    return {
+      ok: true,
+      windowState: snapshot.controlWindowState,
+      snapshot,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_FULLSCREEN_TOGGLE, async () => {
+    const controlWin = windowManager.getControlWindow();
+    if (!isWindowUsable(controlWin)) {
+      return { ok: false, error: 'Controller window is not available.' };
+    }
+
+    const currentlyFull =
+      typeof controlWin.isFullScreen === 'function'
+        ? Boolean(controlWin.isFullScreen())
+        : false;
+    if (typeof controlWin.setFullScreen === 'function') {
+      controlWin.setFullScreen(!currentlyFull);
+    }
+
+    const snapshot = broadcastConnectionStatus(
+      windowManager,
+      'CONTROL_WINDOW_FULLSCREEN_TOGGLED'
+    );
+    return {
+      ok: true,
+      windowState: snapshot.controlWindowState,
+      snapshot,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, async () => {
+    const controlWin = windowManager.getControlWindow();
+    if (!isWindowUsable(controlWin)) {
+      return { ok: false, error: 'Controller window is not available.' };
+    }
+    if (typeof controlWin.close === 'function') {
+      controlWin.close();
+    }
+    return { ok: true };
   });
 
   // =========================================================================

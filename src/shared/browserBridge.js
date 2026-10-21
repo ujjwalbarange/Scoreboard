@@ -37,6 +37,18 @@ function readPersistedOverlayState() {
       return {
         overlayAlive: true,
         overlayVisible: true,
+        controlWindowState: {
+          isMaximized: false,
+          isFullScreen: false,
+          isMinimized: false,
+          resizable: true,
+          bounds: {
+            x: 0,
+            y: 0,
+            width: WINDOW_DIMENSIONS.CONTROL_DECK.width,
+            height: WINDOW_DIMENSIONS.CONTROL_DECK.height,
+          },
+        },
         overlayBounds: {
           x: 60,
           y: 60,
@@ -53,6 +65,18 @@ function readPersistedOverlayState() {
         typeof parsed.overlayVisible === 'boolean'
           ? parsed.overlayVisible
           : true,
+      controlWindowState: parsed.controlWindowState || {
+        isMaximized: false,
+        isFullScreen: false,
+        isMinimized: false,
+        resizable: true,
+        bounds: {
+          x: 0,
+          y: 0,
+          width: WINDOW_DIMENSIONS.CONTROL_DECK.width,
+          height: WINDOW_DIMENSIONS.CONTROL_DECK.height,
+        },
+      },
       overlayBounds: parsed.overlayBounds || {
         x: 60,
         y: 60,
@@ -64,6 +88,18 @@ function readPersistedOverlayState() {
     return {
       overlayAlive: true,
       overlayVisible: true,
+      controlWindowState: {
+        isMaximized: false,
+        isFullScreen: false,
+        isMinimized: false,
+        resizable: true,
+        bounds: {
+          x: 0,
+          y: 0,
+          width: WINDOW_DIMENSIONS.CONTROL_DECK.width,
+          height: WINDOW_DIMENSIONS.CONTROL_DECK.height,
+        },
+      },
       overlayBounds: {
         x: 60,
         y: 60,
@@ -119,6 +155,18 @@ export function getBroadcastController() {
       status,
       mainProcessReady: true,
       controlDeckAlive: true,
+      controlWindowState: {
+        isMaximized: Boolean(internalState.controlWindowState?.isMaximized),
+        isFullScreen: Boolean(internalState.controlWindowState?.isFullScreen),
+        isMinimized: Boolean(internalState.controlWindowState?.isMinimized),
+        resizable: true,
+        bounds: internalState.controlWindowState?.bounds || {
+          x: 0,
+          y: 0,
+          width: WINDOW_DIMENSIONS.CONTROL_DECK.width,
+          height: WINDOW_DIMENSIONS.CONTROL_DECK.height,
+        },
+      },
       overlayAlive: internalState.overlayAlive,
       overlayVisible: internalState.overlayVisible,
       overlayBounds: { ...internalState.overlayBounds },
@@ -529,6 +577,104 @@ export function getBroadcastController() {
       return () => {
         testEventAckListeners.delete(callback);
       };
+    },
+
+    // Phase 3 Controller Window Controls
+    getWindowState: async () => {
+      internalState = readPersistedOverlayState();
+      const snapshot = buildSnapshot('WINDOW_STATE_QUERY');
+      return {
+        ok: true,
+        windowState: snapshot.controlWindowState,
+      };
+    },
+
+    minimizeWindow: async () => {
+      internalState = readPersistedOverlayState();
+      internalState = {
+        ...internalState,
+        controlWindowState: {
+          ...internalState.controlWindowState,
+          isMinimized: true,
+        },
+      };
+      writePersistedOverlayState(internalState);
+      const snapshot = buildSnapshot('CONTROL_WINDOW_MINIMIZED');
+      emitBusMessage({ kind: 'CONNECTION_STATUS_CHANGED', snapshot });
+      notifySet(connectionListeners, snapshot);
+      return {
+        ok: true,
+        windowState: snapshot.controlWindowState,
+        snapshot,
+      };
+    },
+
+    toggleMaximizeWindow: async () => {
+      internalState = readPersistedOverlayState();
+      const nextMaximized = !internalState.controlWindowState?.isMaximized;
+      internalState = {
+        ...internalState,
+        controlWindowState: {
+          ...internalState.controlWindowState,
+          isMaximized: nextMaximized,
+          isMinimized: false,
+        },
+      };
+      writePersistedOverlayState(internalState);
+      const snapshot = buildSnapshot('CONTROL_WINDOW_MAXIMIZE_TOGGLED');
+      emitBusMessage({ kind: 'CONNECTION_STATUS_CHANGED', snapshot });
+      notifySet(connectionListeners, snapshot);
+      return {
+        ok: true,
+        windowState: snapshot.controlWindowState,
+        snapshot,
+      };
+    },
+
+    toggleFullscreenWindow: async () => {
+      internalState = readPersistedOverlayState();
+      let nextFull = !internalState.controlWindowState?.isFullScreen;
+      if (typeof document !== 'undefined') {
+        try {
+          if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+            nextFull = true;
+          } else if (document.fullscreenElement && document.exitFullscreen) {
+            await document.exitFullscreen();
+            nextFull = false;
+          }
+        } catch {
+          // Ignore browser fullscreen permission restriction in iframe preview
+        }
+      }
+      internalState = {
+        ...internalState,
+        controlWindowState: {
+          ...internalState.controlWindowState,
+          isFullScreen: nextFull,
+          isMinimized: false,
+        },
+      };
+      writePersistedOverlayState(internalState);
+      const snapshot = buildSnapshot('CONTROL_WINDOW_FULLSCREEN_TOGGLED');
+      emitBusMessage({ kind: 'CONNECTION_STATUS_CHANGED', snapshot });
+      notifySet(connectionListeners, snapshot);
+      return {
+        ok: true,
+        windowState: snapshot.controlWindowState,
+        snapshot,
+      };
+    },
+
+    closeWindow: async () => {
+      if (typeof window !== 'undefined' && typeof window.close === 'function') {
+        try {
+          window.close();
+        } catch {
+          // Ignore in browser preview
+        }
+      }
+      return { ok: true };
     },
 
     // Phase 2 Authoritative Match Methods

@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 
 /**
  * Reusable TeamCard Component for the 26-Team (A-Z) Control Deck Grid
- * Phase 2: Live Match Engine, Keyboard Controls, Placement Cascading & Roster Editor
+ * Phase 2 & Phase 3 Addendum:
+ * - Supports full 2-column card view when Overview panel is visible (`compact = false`)
+ * - Supports compact 3-column single-row team selector when Overview panel is hidden (`compact = true`)
+ *   so all 26 teams fit on one screen at once at typical desktop resolutions without vertical scrolling
  */
 export default function TeamCard({
   team,
@@ -10,6 +13,7 @@ export default function TeamCard({
   isSelected,
   isHeld,
   isLocked,
+  compact = false,
   onSelect,
   onIncrementKill,
   onDecrementKill,
@@ -67,10 +71,151 @@ export default function TeamCard({
     setIsEditingRoster(false);
   };
 
+  // =========================================================================
+  // COMPACT 3-COLUMN TEAM SELECTOR MODE (When Overview Panel is Hidden)
+  // =========================================================================
+  if (compact) {
+    const hoverTooltip = `${slotKey}: ${teamName} (${
+      isEliminated ? `Placed #${pos}` : 'ALIVE'
+    } · KP: ${kp} · PP: ${pp} · TT: ${tt})`;
+
+    return (
+      <article
+        data-testid={`team-card-${slotKey}`}
+        data-compact-card="true"
+        onClick={() => onSelect(slotKey)}
+        title={hoverTooltip}
+        className={`group cursor-pointer rounded border px-2.5 py-1.5 transition-colors flex items-center justify-between gap-2 ${
+          isHeld
+            ? 'border-emerald-400 bg-emerald-950/35 ring-1 ring-emerald-400/70'
+            : isSelected
+            ? 'border-cyan-400 bg-[#132238] ring-1 ring-cyan-400/70'
+            : isEliminated
+            ? 'border-slate-800/90 bg-[#0d121c]/90 hover:border-slate-700'
+            : 'border-slate-800 bg-[#101622] hover:border-slate-600'
+        }`}
+      >
+        {/* Left: Clickable Slot Badge + Gracefully Truncated Team Name */}
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(slotKey);
+            }}
+            aria-label={`Select Team Slot ${slotKey}: ${teamName}`}
+            aria-pressed={isSelected}
+            className={`deck-mono-font flex h-6 w-6 shrink-0 items-center justify-center rounded border text-xs font-bold transition-colors ${
+              isHeld
+                ? 'border-emerald-300 bg-emerald-400 text-slate-950'
+                : isSelected
+                ? 'border-cyan-300 bg-cyan-400 text-slate-950'
+                : 'border-slate-700 bg-slate-900 text-cyan-400 group-hover:border-cyan-500/60'
+            }`}
+          >
+            {slotKey}
+          </button>
+
+          <div className="min-w-0 flex-1">
+            <h3
+              data-testid={`team-name-${slotKey}`}
+              title={teamName}
+              className={`truncate text-xs sm:text-[13px] font-bold ${
+                isSelected ? 'text-cyan-200' : 'text-white'
+              }`}
+            >
+              {teamName}
+            </h3>
+          </div>
+        </div>
+
+        {/* Right: Compact Status + Tabular Metrics + Quick KP Step */}
+        <div
+          className="flex items-center gap-2 shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span
+            data-testid={`team-status-${slotKey}`}
+            className={`deck-mono-font text-[10px] font-semibold ${
+              isEliminated ? 'text-amber-400' : 'text-emerald-400'
+            }`}
+          >
+            <span data-testid={`team-${slotKey}-pos`}>
+              {isEliminated ? `#${String(pos).padStart(2, '0')}` : 'ALIVE'}
+            </span>
+          </span>
+
+          <div className="deck-mono-font flex items-center gap-1.5 text-[11px] border-l border-slate-800 pl-2">
+            <span className="text-slate-400">
+              K:
+              <strong
+                data-testid={`team-${slotKey}-kp`}
+                className="text-cyan-300 ml-0.5"
+              >
+                {String(kp).padStart(2, '0')}
+              </strong>
+            </span>
+            <span className="text-slate-500 hidden 2xl:inline">
+              P:
+              <strong
+                data-testid={`team-${slotKey}-pp`}
+                className="text-slate-300 ml-0.5"
+              >
+                {String(pp).padStart(2, '0')}
+              </strong>
+            </span>
+            <span className="text-amber-400/90">
+              T:
+              <strong
+                data-testid={`team-${slotKey}-tt`}
+                className="text-amber-400 ml-0.5"
+              >
+                {String(tt).padStart(2, '0')}
+              </strong>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              data-testid={`team-${slotKey}-kp-minus`}
+              aria-label={`Decrement Kill Points for Team ${slotKey}`}
+              disabled={isLocked || kp <= 0}
+              onClick={() => {
+                onSelect(slotKey);
+                onDecrementKill?.(slotKey);
+              }}
+              className="deck-mono-font rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-slate-200 hover:border-rose-400/60 hover:text-rose-200 disabled:opacity-40"
+            >
+              -1
+            </button>
+            <button
+              type="button"
+              data-testid={`team-${slotKey}-kp-plus`}
+              aria-label={`Increment Kill Points for Team ${slotKey}`}
+              disabled={isLocked}
+              onClick={() => {
+                onSelect(slotKey);
+                onIncrementKill?.(slotKey);
+              }}
+              className="deck-mono-font rounded border border-cyan-500/40 bg-cyan-950/50 px-1.5 py-0.5 text-[10px] font-bold text-cyan-300 hover:bg-cyan-900/70 disabled:opacity-40"
+            >
+              +1
+            </button>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  // =========================================================================
+  // DETAILED 2-COLUMN TEAM CARD MODE (When Overview Panel is Visible)
+  // =========================================================================
   return (
     <article
       data-testid={`team-card-${slotKey}`}
-      className={`rounded-md border transition-colors ${
+      onClick={() => onSelect(slotKey)}
+      className={`cursor-pointer rounded-md border transition-colors ${
         isSelected
           ? 'border-cyan-400 bg-[#131d31]'
           : isEliminated
@@ -84,7 +229,10 @@ export default function TeamCard({
           <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
-              onClick={() => onSelect(slotKey)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(slotKey);
+              }}
               aria-label={`Select Team Slot ${slotKey}: ${teamName}`}
               aria-pressed={isSelected}
               className={`deck-mono-font flex h-8 w-8 shrink-0 items-center justify-center rounded border text-sm font-bold transition-colors ${
@@ -102,6 +250,7 @@ export default function TeamCard({
               <div className="flex items-center gap-1.5">
                 <h3
                   data-testid={`team-name-${slotKey}`}
+                  title={teamName}
                   className="truncate text-sm font-bold text-white"
                 >
                   {teamName}
@@ -199,7 +348,10 @@ export default function TeamCard({
         </div>
 
         {/* Middle Row: Quick Operator Controls (KP -/+, Placement Select, Rank ↑/↓, Edit Roster) */}
-        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-2">
+        <div
+          className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-2"
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* Kill Point Controls */}
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] font-medium text-slate-400">KP:</span>
@@ -303,6 +455,7 @@ export default function TeamCard({
         {isEditingRoster ? (
           <form
             onSubmit={handleSaveRoster}
+            onClick={(e) => e.stopPropagation()}
             className="mt-2.5 rounded border border-slate-700 bg-[#090d15] p-2.5 space-y-2"
           >
             <div>
@@ -372,6 +525,7 @@ export default function TeamCard({
             {players.map((playerName, idx) => (
               <div
                 key={`${slotKey}-p${idx + 1}`}
+                title={playerName}
                 className={`truncate rounded bg-[#0b0f17] px-2 py-1 text-[11px] border border-slate-800/60 ${
                   !isEliminated
                     ? 'text-slate-300'

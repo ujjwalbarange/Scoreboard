@@ -2,7 +2,7 @@
 
 /*
  * Operator Control Deck Stylesheet
- * Phase 1: Esports Broadcast Controller & Live Overlay System
+ * Phase 1, 2 & 3 Addendum: Esports Broadcast Controller & Live Overlay System
  */
 
 :root {
@@ -31,6 +31,16 @@ body:not(.overlay-body) {
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* Custom frameless controller title bar drag regions */
+.deck-drag-region {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.deck-no-drag {
+  -webkit-app-region: no-drag;
 }
 
 /* Transparency checkerboard exclusively inside the OBS Overlay Viewport preview stage

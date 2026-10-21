@@ -6,6 +6,7 @@ import {
   OVERLAY_VIEW_MODES,
 } from '../shared/constants.js';
 import { filterTeamsByFuzzySearch } from '../shared/fuzzySearch.js';
+import { getTeamGridLayoutConfig } from '../shared/overlayLayout.js';
 import OverlayViewportApp from '../overlay-viewport/App.jsx';
 import Header from './components/Header.jsx';
 import MatchToolbar from './components/MatchToolbar.jsx';
@@ -37,6 +38,11 @@ export default function ControlDeckApp() {
   const [overlayAlive, setOverlayAlive] = useState(true);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const [lastHeartbeat, setLastHeartbeat] = useState(null);
+  const [windowState, setWindowState] = useState({
+    isMaximized: false,
+    isFullScreen: false,
+    isMinimized: false,
+  });
 
   const searchInputRef = useRef(null);
 
@@ -114,6 +120,9 @@ export default function ControlDeckApp() {
         );
         setOverlayAlive(Boolean(snapshot.overlayAlive));
         setOverlayVisible(Boolean(snapshot.overlayVisible));
+        if (snapshot.controlWindowState) {
+          setWindowState(snapshot.controlWindowState);
+        }
         setLastHeartbeat(snapshot.timestamp || new Date().toISOString());
       })
       .catch(() => {
@@ -130,6 +139,9 @@ export default function ControlDeckApp() {
       );
       setOverlayAlive(Boolean(snapshot.overlayAlive));
       setOverlayVisible(Boolean(snapshot.overlayVisible));
+      if (snapshot.controlWindowState) {
+        setWindowState(snapshot.controlWindowState);
+      }
       setLastHeartbeat(snapshot.timestamp || new Date().toISOString());
     });
 
@@ -137,6 +149,24 @@ export default function ControlDeckApp() {
       isMounted = false;
       if (typeof unsubscribeConnection === 'function') unsubscribeConnection();
     };
+  }, []);
+
+  // Support F11 keyboard shortcut for fullscreen toggle
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'F11') {
+        e.preventDefault();
+        const controller = getBroadcastController();
+        controller
+          .toggleFullscreenWindow?.()
+          .then((res) => {
+            if (res?.windowState) setWindowState(res.windowState);
+          })
+          .catch(() => {});
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const activeGame = matchState?.activeGame || 'BGMI';
@@ -173,6 +203,29 @@ export default function ControlDeckApp() {
   const handleReopenOverlay = async () => {
     const controller = getBroadcastController();
     await controller.reopenOverlayWindow();
+  };
+
+  const handleMinimizeWindow = async () => {
+    const controller = getBroadcastController();
+    const res = await controller.minimizeWindow?.();
+    if (res?.windowState) setWindowState(res.windowState);
+  };
+
+  const handleToggleMaximizeWindow = async () => {
+    const controller = getBroadcastController();
+    const res = await controller.toggleMaximizeWindow?.();
+    if (res?.windowState) setWindowState(res.windowState);
+  };
+
+  const handleToggleFullscreenWindow = async () => {
+    const controller = getBroadcastController();
+    const res = await controller.toggleFullscreenWindow?.();
+    if (res?.windowState) setWindowState(res.windowState);
+  };
+
+  const handleCloseWindow = async () => {
+    const controller = getBroadcastController();
+    await controller.closeWindow?.();
   };
 
   const handleManualPlacementSubmit = async (e) => {
@@ -240,12 +293,17 @@ export default function ControlDeckApp() {
     searchQuery
   );
 
+  const teamGridLayout = getTeamGridLayoutConfig({
+    isOverviewVisible: showOverlayMonitor,
+    totalTeams: filteredTeams.length || 26,
+  });
+
   const aliveSquadCount = teams.filter((t) => Number(t.pos) === 0).length;
   const totalAlivePlayers = aliveSquadCount * 4;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0b0e14] text-slate-100">
-      {/* 1. Control Deck Top Header */}
+      {/* 1. Control Deck Top Header & Custom Window Controls */}
       <Header
         selectedGame={activeGame}
         onSelectGame={(gameId) => setActiveGame(gameId)}
@@ -262,6 +320,11 @@ export default function ControlDeckApp() {
         onToggleOverlay={handleToggleOverlay}
         onCloseOverlay={handleCloseOverlay}
         onReopenOverlay={handleReopenOverlay}
+        windowState={windowState}
+        onMinimizeWindow={handleMinimizeWindow}
+        onToggleMaximizeWindow={handleToggleMaximizeWindow}
+        onToggleFullscreenWindow={handleToggleFullscreenWindow}
+        onCloseWindow={handleCloseWindow}
       />
 
       {/* 2. Match Lifecycle, Overlay Mode & CSV Toolbar */}
@@ -548,15 +611,17 @@ export default function ControlDeckApp() {
 
                 <button
                   type="button"
+                  data-testid="toggle-overview-btn"
+                  aria-pressed={showOverlayMonitor}
                   onClick={() => setShowOverlayMonitor((prev) => !prev)}
                   className="rounded border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:border-slate-500 hover:text-white transition-colors whitespace-nowrap shrink-0"
                 >
-                  {showOverlayMonitor ? 'Hide Preview' : 'Show Preview'}
+                  {showOverlayMonitor ? 'Hide Overview' : 'Show Overview'}
                 </button>
               </div>
             </div>
 
-            {/* TAB 1: 26-Team Interactive Grid */}
+            {/* TAB 1: 26-Team Interactive Grid (3-Column Compact when Overview Hidden, 2-Column Detailed when Overview Visible) */}
             {workspaceTab === 'SQUADS' && (
               <>
                 {filteredTeams.length === 0 ? (
@@ -579,7 +644,8 @@ export default function ControlDeckApp() {
                 ) : (
                   <div
                     data-testid="team-cards-grid"
-                    className="grid grid-cols-1 md:grid-cols-2 gap-3"
+                    data-grid-columns={teamGridLayout.columns}
+                    className={teamGridLayout.gridClassName}
                   >
                     {filteredTeams.map((team) => {
                       const key = team.Key || team.slotKey;
@@ -591,6 +657,7 @@ export default function ControlDeckApp() {
                           isSelected={selectedSlotKey === key}
                           isHeld={heldTeamKey === key}
                           isLocked={isCompleted}
+                          compact={teamGridLayout.compact}
                           onSelect={selectTeam}
                           onIncrementKill={incrementKill}
                           onDecrementKill={decrementKill}
@@ -912,19 +979,20 @@ export default function ControlDeckApp() {
             )}
           </div>
 
-          {/* Right Column: Live Broadcast Overlay Viewport Monitor (Simulates OBS Transparent Capture Stage) */}
+          {/* Right Column: Live Broadcast Overlay Overview Monitor (16:9 Two-Column OBS Capture Stage) */}
           {showOverlayMonitor && (
             <aside
+              data-testid="overview-monitor-panel"
               aria-label="Broadcast Overlay Viewport Monitor"
-              className="w-full xl:w-[448px] shrink-0 rounded-md border border-slate-800 bg-[#0d121c] p-3.5"
+              className="w-full xl:w-[540px] 2xl:w-[600px] shrink-0 rounded-md border border-slate-800 bg-[#0d121c] p-3.5"
             >
               <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
                 <div>
                   <h2 className="deck-display-font text-base font-bold tracking-wide text-white">
-                    BROADCAST OVERLAY VIEWPORT (OBS CAPTURE)
+                    BROADCAST OVERLAY OVERVIEW (16:9 OBS CAPTURE)
                   </h2>
                   <p className="text-[11px] text-slate-400">
-                    Frameless · Transparent (#00000000) · Mode:{' '}
+                    16:9 Two-Column · Transparent (#00000000) · Mode:{' '}
                     <strong className="text-amber-300">{overlayViewMode}</strong>
                   </p>
                 </div>

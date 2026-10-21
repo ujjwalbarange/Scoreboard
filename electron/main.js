@@ -90,7 +90,11 @@ function createControlDeckWindow() {
     height: WINDOW_DIMENSIONS.CONTROL_DECK.height,
     minWidth: WINDOW_DIMENSIONS.CONTROL_DECK.minWidth,
     minHeight: WINDOW_DIMENSIONS.CONTROL_DECK.minHeight,
+    frame: false,
     resizable: true,
+    minimizable: true,
+    maximizable: true,
+    fullscreenable: true,
     show: false,
     backgroundColor: '#0B0E14',
     autoHideMenuBar: true,
@@ -103,6 +107,34 @@ function createControlDeckWindow() {
       broadcastConnectionStatus(windowManager, 'CONTROL_DECK_READY');
     }
   });
+
+  const emitControlWindowState = (reason) => {
+    if (isWindowUsable(controlDeckWindow)) {
+      broadcastConnectionStatus(windowManager, reason);
+    }
+  };
+
+  controlDeckWindow.on('maximize', () =>
+    emitControlWindowState('CONTROL_WINDOW_MAXIMIZED')
+  );
+  controlDeckWindow.on('unmaximize', () =>
+    emitControlWindowState('CONTROL_WINDOW_UNMAXIMIZED')
+  );
+  controlDeckWindow.on('enter-full-screen', () =>
+    emitControlWindowState('CONTROL_WINDOW_FULLSCREEN_ENTER')
+  );
+  controlDeckWindow.on('leave-full-screen', () =>
+    emitControlWindowState('CONTROL_WINDOW_FULLSCREEN_LEAVE')
+  );
+  controlDeckWindow.on('minimize', () =>
+    emitControlWindowState('CONTROL_WINDOW_MINIMIZED')
+  );
+  controlDeckWindow.on('restore', () =>
+    emitControlWindowState('CONTROL_WINDOW_RESTORED')
+  );
+  controlDeckWindow.on('resize', () =>
+    emitControlWindowState('CONTROL_WINDOW_RESIZED')
+  );
 
   controlDeckWindow.on('closed', () => {
     controlDeckWindow = null;

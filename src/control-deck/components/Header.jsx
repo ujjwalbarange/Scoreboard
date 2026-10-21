@@ -8,10 +8,12 @@ import {
 import ConnectionStatus from './ConnectionStatus.jsx';
 
 /**
- * Operator Control Deck Header Component
- * Phase 3: Compact, broadcast-ready top bar with inline editable Event/Tournament Title,
- * Game Ruleset Selector (BGMI / Free Fire), Overlay Connection Status, Audio Feedback toggle,
- * and Overlay Window visibility controls.
+ * Operator Control Deck Header & Custom Window Title Bar Component
+ * Phase 3 Addendum:
+ * - Custom draggable title bar with non-conflicting Minimize, Maximize/Restore, Fullscreen, and Close controls
+ * - Inline editable Event/Tournament Title & Stage Subtitle
+ * - Game Ruleset Selector (BGMI / Free Fire), Overlay Connection Status, Audio Feedback toggle,
+ *   and Overlay Window visibility controls
  */
 export default function Header({
   selectedGame,
@@ -29,6 +31,11 @@ export default function Header({
   onToggleOverlay,
   onCloseOverlay,
   onReopenOverlay,
+  windowState = { isMaximized: false, isFullScreen: false },
+  onMinimizeWindow,
+  onToggleMaximizeWindow,
+  onToggleFullscreenWindow,
+  onCloseWindow,
 }) {
   const [isEditingEvent, setIsEditingEvent] = useState(false);
   const [draftTitle, setDraftTitle] = useState(tournamentTitle);
@@ -43,6 +50,9 @@ export default function Header({
 
   const isDisconnected =
     !overlayAlive || connectionStatus === OVERLAY_CONNECTION_STATE.DISCONNECTED;
+
+  const isMaximized = Boolean(windowState?.isMaximized);
+  const isFullScreen = Boolean(windowState?.isFullScreen);
 
   const statusColorClass =
     matchStatus === MATCH_STATUS.LIVE
@@ -65,11 +75,21 @@ export default function Header({
   };
 
   return (
-    <header className="border-b border-slate-800 bg-[#0d121c]">
-      <div className="mx-auto flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 px-4 sm:px-6 py-2.5">
+    <header
+      className="deck-drag-region border-b border-slate-800 bg-[#0d121c]"
+      onDoubleClick={(e) => {
+        if (e.target === e.currentTarget && onToggleMaximizeWindow) {
+          onToggleMaximizeWindow();
+        }
+      }}
+    >
+      <div className="mx-auto flex flex-wrap items-center justify-between gap-2.5 px-4 sm:px-5 py-2">
         {/* Left Zone: Brand Title, Editable Event Name & Match Status */}
-        <div className="flex flex-wrap items-center gap-2.5 min-w-0">
-          <h1 className="deck-display-font text-lg sm:text-xl font-bold tracking-wider text-white whitespace-nowrap shrink-0">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <h1
+            className="deck-display-font text-base sm:text-lg font-bold tracking-wider text-white whitespace-nowrap shrink-0"
+            onDoubleClick={() => onToggleMaximizeWindow?.()}
+          >
             {APP_METADATA.NAME}
           </h1>
           <span aria-hidden="true" className="text-slate-700 hidden sm:inline">
@@ -79,7 +99,7 @@ export default function Header({
           {isEditingEvent ? (
             <form
               onSubmit={handleSaveEventTitle}
-              className="flex flex-wrap items-center gap-1.5"
+              className="deck-no-drag flex flex-wrap items-center gap-1.5"
             >
               <label htmlFor="event-title-input" className="sr-only">
                 Event / Tournament Name
@@ -92,7 +112,7 @@ export default function Header({
                 value={draftTitle}
                 onChange={(e) => setDraftTitle(e.target.value)}
                 placeholder="Event / Tournament Name"
-                className="w-52 rounded border border-cyan-400 bg-[#070a10] px-2 py-1 text-xs font-semibold text-white focus:outline-none"
+                className="w-48 rounded border border-cyan-400 bg-[#070a10] px-2 py-1 text-xs font-semibold text-white focus:outline-none"
               />
               <label htmlFor="event-stage-input" className="sr-only">
                 Stage Label
@@ -105,7 +125,7 @@ export default function Header({
                 value={draftStage}
                 onChange={(e) => setDraftStage(e.target.value)}
                 placeholder="Stage (e.g. Day 1)"
-                className="w-32 rounded border border-slate-700 bg-[#070a10] px-2 py-1 text-xs text-slate-200 focus:border-cyan-400 focus:outline-none"
+                className="w-28 rounded border border-slate-700 bg-[#070a10] px-2 py-1 text-xs text-slate-200 focus:border-cyan-400 focus:outline-none"
               />
               <button
                 type="submit"
@@ -122,10 +142,10 @@ export default function Header({
               </button>
             </form>
           ) : (
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="deck-no-drag flex items-center gap-2 min-w-0">
               <span
                 data-testid="header-tournament-title"
-                className="text-xs font-bold text-amber-300 truncate max-w-[240px]"
+                className="text-xs font-bold text-amber-300 truncate max-w-[220px]"
                 title={`${tournamentTitle} (${stageLabel})`}
               >
                 {tournamentTitle}
@@ -158,8 +178,8 @@ export default function Header({
           </div>
         </div>
 
-        {/* Center Zone: Game Selector (BGMI / Free Fire) & Connection Status */}
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Center & Right Zone: Game Selector, Connection Status, Overlay Controls & Window Controls */}
+        <div className="deck-no-drag flex flex-wrap items-center gap-2.5 shrink-0">
           <div
             className="flex items-center gap-1 rounded border border-slate-800 bg-[#080b11] p-0.5"
             role="group"
@@ -190,16 +210,13 @@ export default function Header({
             overlayVisible={overlayVisible}
             lastHeartbeat={lastHeartbeat}
           />
-        </div>
 
-        {/* Right Zone: Audio Mute Toggle & Overlay Window Controls */}
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
             data-testid="toggle-audio-btn"
             onClick={onToggleAudio}
             aria-pressed={audioEnabled}
-            className={`rounded border px-2.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+            className={`rounded border px-2 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
               audioEnabled
                 ? 'border-slate-700 bg-slate-900 text-cyan-300 hover:border-cyan-400/60'
                 : 'border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200'
@@ -212,7 +229,7 @@ export default function Header({
             type="button"
             onClick={onToggleOverlay}
             disabled={isDisconnected}
-            className="rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
+            className="rounded border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:border-slate-500 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
           >
             {overlayVisible ? 'Hide Overlay' : 'Show Overlay'}
           </button>
@@ -221,7 +238,7 @@ export default function Header({
             <button
               type="button"
               onClick={onReopenOverlay}
-              className="rounded border border-emerald-500/50 bg-emerald-950/60 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-900/70 transition-colors whitespace-nowrap shrink-0"
+              className="rounded border border-emerald-500/50 bg-emerald-950/60 px-2.5 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-900/70 transition-colors whitespace-nowrap shrink-0"
             >
               Reopen Overlay
             </button>
@@ -229,11 +246,140 @@ export default function Header({
             <button
               type="button"
               onClick={onCloseOverlay}
-              className="rounded border border-rose-500/40 bg-rose-950/40 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-900/60 transition-colors whitespace-nowrap shrink-0"
+              className="rounded border border-rose-500/40 bg-rose-950/40 px-2.5 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-900/60 transition-colors whitespace-nowrap shrink-0"
             >
               Close Overlay
             </button>
           )}
+
+          {/* Controller Window Controls (Minimize, Maximize/Restore, Fullscreen, Close) */}
+          <div
+            data-testid="controller-window-controls"
+            role="group"
+            aria-label="Controller Window Controls"
+            className="flex items-center gap-1 border-l border-slate-800 pl-2.5 ml-0.5"
+          >
+            <button
+              type="button"
+              data-testid="window-fullscreen-btn"
+              onClick={onToggleFullscreenWindow}
+              aria-pressed={isFullScreen}
+              aria-label={
+                isFullScreen ? 'Exit Fullscreen (F11)' : 'Fullscreen (F11)'
+              }
+              title={
+                isFullScreen ? 'Exit Fullscreen (F11)' : 'Fullscreen (F11)'
+              }
+              className={`flex h-7 px-2 items-center justify-center rounded border text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                isFullScreen
+                  ? 'border-cyan-400/70 bg-cyan-950/60 text-cyan-300'
+                  : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500 hover:text-white'
+              }`}
+            >
+              {isFullScreen ? 'Exit Fullscreen' : 'Fullscreen'}
+            </button>
+
+            <button
+              type="button"
+              data-testid="window-minimize-btn"
+              onClick={onMinimizeWindow}
+              aria-label="Minimize Window"
+              title="Minimize Window"
+              className="flex h-7 w-7 items-center justify-center rounded border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              <svg
+                width="10"
+                height="2"
+                viewBox="0 0 10 2"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M1 1H9"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              data-testid="window-maximize-btn"
+              onClick={onToggleMaximizeWindow}
+              aria-pressed={isMaximized}
+              aria-label={isMaximized ? 'Restore Window' : 'Maximize Window'}
+              title={isMaximized ? 'Restore Window' : 'Maximize Window'}
+              className="flex h-7 w-7 items-center justify-center rounded border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              {isMaximized ? (
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="1.5"
+                    y="3.5"
+                    width="7"
+                    height="7"
+                    rx="1"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                  />
+                  <path
+                    d="M3.5 3.5V2.5C3.5 1.94772 3.94772 1.5 4.5 1.5H9.5C10.0523 1.5 10.5 1.94772 10.5 2.5V7.5C10.5 8.05228 10.0523 8.5 9.5 8.5H8.5"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 10 10"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="1"
+                    y="1"
+                    width="8"
+                    height="8"
+                    rx="1"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
+                </svg>
+              )}
+            </button>
+
+            <button
+              type="button"
+              data-testid="window-close-btn"
+              onClick={onCloseWindow}
+              aria-label="Close Window"
+              title="Close Window"
+              className="flex h-7 w-7 items-center justify-center rounded border border-rose-500/40 bg-rose-950/40 text-rose-300 hover:border-rose-400 hover:bg-rose-600 hover:text-white transition-colors"
+            >
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </header>

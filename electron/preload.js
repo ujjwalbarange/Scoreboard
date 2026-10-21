@@ -22,6 +22,13 @@ const IPC_CHANNELS = Object.freeze({
   SET_OVERLAY_BOUNDS: 'broadcast:set-overlay-bounds',
   ACKNOWLEDGE_TEST_EVENT: 'broadcast:ack-test-event',
 
+  // Phase 3 Controller Window Control Invoke Channels
+  WINDOW_GET_STATE: 'window:get-state',
+  WINDOW_MINIMIZE: 'window:minimize',
+  WINDOW_MAXIMIZE_TOGGLE: 'window:maximize-toggle',
+  WINDOW_FULLSCREEN_TOGGLE: 'window:fullscreen-toggle',
+  WINDOW_CLOSE: 'window:close',
+
   // Phase 2 Authoritative Match Invoke Channels
   GET_MATCH_STATE: 'match:get-state',
   SELECT_TEAM: 'match:select-team',
@@ -58,6 +65,11 @@ const ALLOWED_INVOKE = new Set([
   IPC_CHANNELS.REOPEN_OVERLAY,
   IPC_CHANNELS.SET_OVERLAY_BOUNDS,
   IPC_CHANNELS.ACKNOWLEDGE_TEST_EVENT,
+  IPC_CHANNELS.WINDOW_GET_STATE,
+  IPC_CHANNELS.WINDOW_MINIMIZE,
+  IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE,
+  IPC_CHANNELS.WINDOW_FULLSCREEN_TOGGLE,
+  IPC_CHANNELS.WINDOW_CLOSE,
   IPC_CHANNELS.GET_MATCH_STATE,
   'match:set-active-game',
   'match:update-broadcast-meta',
@@ -148,6 +160,14 @@ const broadcastControllerAPI = Object.freeze({
     safeSubscribe(IPC_CHANNELS.OVERLAY_TEST_EVENT, callback),
   onTestEventAck: (callback) =>
     safeSubscribe(IPC_CHANNELS.TEST_EVENT_ACK, callback),
+
+  // Phase 3 Controller Window Controls (Minimize, Maximize/Restore, Fullscreen, Close)
+  getWindowState: () => safeInvoke(IPC_CHANNELS.WINDOW_GET_STATE),
+  minimizeWindow: () => safeInvoke(IPC_CHANNELS.WINDOW_MINIMIZE),
+  toggleMaximizeWindow: () => safeInvoke(IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE),
+  toggleFullscreenWindow: () =>
+    safeInvoke(IPC_CHANNELS.WINDOW_FULLSCREEN_TOGGLE),
+  closeWindow: () => safeInvoke(IPC_CHANNELS.WINDOW_CLOSE),
 
   // Phase 2 & Phase 3 Authoritative Match & CSV Methods
   getMatchState: () => safeInvoke(IPC_CHANNELS.GET_MATCH_STATE),

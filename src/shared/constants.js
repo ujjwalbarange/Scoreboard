@@ -89,6 +89,13 @@ export const IPC_CHANNELS = Object.freeze({
   SET_OVERLAY_BOUNDS: 'broadcast:set-overlay-bounds',
   ACKNOWLEDGE_TEST_EVENT: 'broadcast:ack-test-event',
 
+  // Phase 3 Controller Window Control Invoke Channels
+  WINDOW_GET_STATE: 'window:get-state',
+  WINDOW_MINIMIZE: 'window:minimize',
+  WINDOW_MAXIMIZE_TOGGLE: 'window:maximize-toggle',
+  WINDOW_FULLSCREEN_TOGGLE: 'window:fullscreen-toggle',
+  WINDOW_CLOSE: 'window:close',
+
   // Phase 2 & Phase 3 Authoritative Match Engine Invoke Channels
   GET_MATCH_STATE: 'match:get-state',
   SET_ACTIVE_GAME: 'match:set-active-game',
@@ -127,6 +134,11 @@ export const ALLOWED_INVOKE_CHANNELS = new Set([
   IPC_CHANNELS.REOPEN_OVERLAY,
   IPC_CHANNELS.SET_OVERLAY_BOUNDS,
   IPC_CHANNELS.ACKNOWLEDGE_TEST_EVENT,
+  IPC_CHANNELS.WINDOW_GET_STATE,
+  IPC_CHANNELS.WINDOW_MINIMIZE,
+  IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE,
+  IPC_CHANNELS.WINDOW_FULLSCREEN_TOGGLE,
+  IPC_CHANNELS.WINDOW_CLOSE,
   IPC_CHANNELS.GET_MATCH_STATE,
   IPC_CHANNELS.SET_ACTIVE_GAME,
   IPC_CHANNELS.UPDATE_BROADCAST_META,
@@ -164,9 +176,11 @@ export const WINDOW_DIMENSIONS = Object.freeze({
     minHeight: 700,
   },
   OVERLAY_VIEWPORT: {
-    width: 460,
-    height: 680,
-    minWidth: 360,
-    minHeight: 480,
+    width: 1280,
+    height: 720,
+    minWidth: 640,
+    minHeight: 360,
+    broadcastWidth: 1920,
+    broadcastHeight: 1080,
   },
 });

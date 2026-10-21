@@ -208,4 +208,67 @@ test('Electron ipcMain handlers register idempotently, validate payloads, and ha
   const reopenRes = await handlers.get(IPC_CHANNELS.REOPEN_OVERLAY)!();
   assert.equal(reopenRes.ok, true);
   assert.equal(reopenRes.status, OVERLAY_CONNECTION_STATE.CONNECTED);
+
+  // 6. Verify Controller Window Controls (Minimize, Maximize/Restore, Fullscreen, Close)
+  assert.equal(isAllowedInvokeChannel(IPC_CHANNELS.WINDOW_MINIMIZE), true);
+  assert.equal(
+    isAllowedInvokeChannel(IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE),
+    true
+  );
+  assert.equal(
+    isAllowedInvokeChannel(IPC_CHANNELS.WINDOW_FULLSCREEN_TOGGLE),
+    true
+  );
+  assert.equal(isAllowedInvokeChannel(IPC_CHANNELS.WINDOW_CLOSE), true);
+
+  let controlMaximized = false;
+  let controlFullScreen = false;
+  let controlMinimized = false;
+  let controlClosed = false;
+
+  Object.assign(mockControlWin, {
+    isMaximized: () => controlMaximized,
+    isFullScreen: () => controlFullScreen,
+    isMinimized: () => controlMinimized,
+    minimize: () => {
+      controlMinimized = true;
+    },
+    maximize: () => {
+      controlMaximized = true;
+      controlMinimized = false;
+    },
+    unmaximize: () => {
+      controlMaximized = false;
+    },
+    setFullScreen: (flag: boolean) => {
+      controlFullScreen = Boolean(flag);
+    },
+    close: () => {
+      controlClosed = true;
+    },
+  });
+
+  const winStateInitial = await handlers.get(IPC_CHANNELS.WINDOW_GET_STATE)!();
+  assert.equal(winStateInitial.ok, true);
+  assert.equal(winStateInitial.windowState.isMaximized, false);
+
+  const maxRes = await handlers.get(IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE)!();
+  assert.equal(maxRes.ok, true);
+  assert.equal(maxRes.windowState.isMaximized, true);
+
+  const restoreRes = await handlers.get(IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE)!();
+  assert.equal(restoreRes.ok, true);
+  assert.equal(restoreRes.windowState.isMaximized, false);
+
+  const fsRes = await handlers.get(IPC_CHANNELS.WINDOW_FULLSCREEN_TOGGLE)!();
+  assert.equal(fsRes.ok, true);
+  assert.equal(fsRes.windowState.isFullScreen, true);
+
+  const minRes = await handlers.get(IPC_CHANNELS.WINDOW_MINIMIZE)!();
+  assert.equal(minRes.ok, true);
+  assert.equal(minRes.windowState.isMinimized, true);
+
+  const closeWinRes = await handlers.get(IPC_CHANNELS.WINDOW_CLOSE)!();
+  assert.equal(closeWinRes.ok, true);
+  assert.equal(controlClosed, true);
 });

@@ -16,6 +16,10 @@ import {
   readAudioEnabledPreference,
   writeAudioEnabledPreference,
 } from '../control-deck/utils/soundEffects.js';
+import {
+  splitTeamsIntoBalancedColumns,
+  getTeamGridLayoutConfig,
+} from './overlayLayout.js';
 
 test('Phase 3 Fuzzy Search matches slot keys, partial names, typos, and player rosters', () => {
   const teams: any[] = buildDefaultTemplateTeams('BGMI');
@@ -181,3 +185,60 @@ test('Phase 3 Audio Feedback utility is fail-safe in headless/Node environments'
     playBroadcastCue('ERROR', true);
   });
 });
+
+test('Phase 3 Addendum: Two-Column Landscape Scorecard distributes 26 teams evenly (13 Left, 13 Right) in rank order', () => {
+  const teams = buildDefaultTemplateTeams('BGMI').map((t: any, idx: number) => ({
+    rank: idx + 1,
+    slotKey: t.Key,
+    teamName: t.TeamName,
+    kp: t.KP,
+    pp: t.PP,
+    tt: t.TT,
+  }));
+
+  const split26 = splitTeamsIntoBalancedColumns(teams, 26);
+  assert.equal(split26.totalDisplayed, 26);
+  assert.equal(split26.rowsPerColumn, 13);
+  assert.equal(split26.leftColumn.length, 13);
+  assert.equal(split26.rightColumn.length, 13);
+
+  // Verify strict ranking order: Left column is #01..#13, Right column is #14..#26
+  assert.equal(split26.leftColumn[0].rank, 1);
+  assert.equal(split26.leftColumn[0].slotKey, 'A');
+  assert.equal(split26.leftColumn[12].rank, 13);
+  assert.equal(split26.leftColumn[12].slotKey, 'M');
+
+  assert.equal(split26.rightColumn[0].rank, 14);
+  assert.equal(split26.rightColumn[0].slotKey, 'N');
+  assert.equal(split26.rightColumn[12].rank, 26);
+  assert.equal(split26.rightColumn[12].slotKey, 'Z');
+
+  // Verify Top 20 split (10 Left, 10 Right)
+  const split20 = splitTeamsIntoBalancedColumns(teams, 20);
+  assert.equal(split20.leftColumn.length, 10);
+  assert.equal(split20.rightColumn.length, 10);
+  assert.equal(split20.rowsPerColumn, 10);
+});
+
+test('Phase 3 Addendum: Controller switches to compact 3-column team selector when Overview is hidden and preserves 2-column layout when Overview is visible', () => {
+  const withOverview = getTeamGridLayoutConfig({
+    isOverviewVisible: true,
+    totalTeams: 26,
+  });
+  assert.equal(withOverview.columns, 2);
+  assert.equal(withOverview.compact, false);
+  assert.equal(withOverview.reclaimedOverviewSpace, false);
+  assert.equal(withOverview.rowsNeeded, 13);
+  assert.match(withOverview.gridClassName, /md:grid-cols-2/);
+
+  const withoutOverview = getTeamGridLayoutConfig({
+    isOverviewVisible: false,
+    totalTeams: 26,
+  });
+  assert.equal(withoutOverview.columns, 3);
+  assert.equal(withoutOverview.compact, true);
+  assert.equal(withoutOverview.reclaimedOverviewSpace, true);
+  assert.equal(withoutOverview.rowsNeeded, 9);
+  assert.match(withoutOverview.gridClassName, /lg:grid-cols-3/);
+});
+
