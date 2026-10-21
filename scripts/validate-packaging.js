@@ -31,7 +31,11 @@ function info(message) {
   console.log(`[PACKAGING CHECK] ${message}`);
 }
 
-export function validateProjectAndBuildArtifacts(rootDir = ROOT_DIR) {
+export function validateProjectAndBuildArtifacts(
+  rootDir = ROOT_DIR,
+  options = {}
+) {
+  const { requireDist = true } = options;
   const errors = [];
 
   // 1. Validate package.json
@@ -190,9 +194,11 @@ export function validateProjectAndBuildArtifacts(rootDir = ROOT_DIR) {
   const distOverlay = path.join(distDir, 'overlay.html');
 
   if (!fs.existsSync(distIndex)) {
-    errors.push(
-      'Missing frontend build output: dist/index.html (run "npm run build" first).'
-    );
+    if (requireDist) {
+      errors.push(
+        'Missing frontend build output: dist/index.html (run "npm run build" first).'
+      );
+    }
   } else {
     const indexHtml = fs.readFileSync(distIndex, 'utf-8');
     if (!indexHtml.includes('./assets/')) {
@@ -203,9 +209,11 @@ export function validateProjectAndBuildArtifacts(rootDir = ROOT_DIR) {
   }
 
   if (!fs.existsSync(distOverlay)) {
-    errors.push(
-      'Missing frontend build output: dist/overlay.html (run "npm run build" first).'
-    );
+    if (requireDist) {
+      errors.push(
+        'Missing frontend build output: dist/overlay.html (run "npm run build" first).'
+      );
+    }
   } else {
     const overlayHtml = fs.readFileSync(distOverlay, 'utf-8');
     if (!overlayHtml.includes('./assets/')) {

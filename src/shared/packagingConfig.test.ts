@@ -130,7 +130,12 @@ test('runtime-paths separates immutable packaged resources from writable userDat
 });
 
 test('validateProjectAndBuildArtifacts and verifyGeneratedWindowsExecutables validate packaging and .exe outputs', async () => {
-  const prepack = validateProjectAndBuildArtifacts();
+  const hasBuiltDist =
+    fs.existsSync(path.resolve('dist/index.html')) &&
+    fs.existsSync(path.resolve('dist/overlay.html'));
+  const prepack = validateProjectAndBuildArtifacts(process.cwd(), {
+    requireDist: hasBuiltDist,
+  });
   assert.equal(
     prepack.ok,
     true,

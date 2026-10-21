@@ -86,11 +86,11 @@ jobs:
       - name: Run TypeScript typecheck (lint)
         run: npm run lint
 
-      - name: Run automated unit & packaging tests
-        run: npm test
-
       - name: Build production dual-window React/Vite frontend
         run: npm run build
+
+      - name: Run automated unit & packaging tests
+        run: npm test
 
       - name: Validate packaging configuration and frontend build artifacts
         run: npm run pack:check
