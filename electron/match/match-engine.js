@@ -17,6 +17,13 @@ import {
   createCanonicalTeam,
 } from '../../src/shared/match-types.js';
 import {
+  createDefaultOverlayConfig,
+  resetBackgroundConfig,
+  resetScorecardConfig,
+  sanitizeOverlayConfig,
+  validateBackgroundImageUpload,
+} from '../../src/shared/overlayLayout.js';
+import {
   validateTeamKey,
   validateTeamsStateInvariants,
 } from '../utils/validation.js';
@@ -58,6 +65,7 @@ export class MatchEngine {
         this.config?.tournamentTitle || 'PRO SERIES INVITATIONAL S4',
       stageLabel: this.config?.defaultStageLabel || 'Week 01 Day 01',
       overlayViewMode: OVERLAY_VIEW_MODES.MATCH,
+      overlayConfig: createDefaultOverlayConfig(),
       activeGame: game,
       matchId: 'Match_01_BGMI',
       roundNumber: 1,
@@ -79,7 +87,7 @@ export class MatchEngine {
 
   /**
    * Returns a serializable snapshot of the complete authoritative match state,
-   * including sorted leaderboard standings and undo metadata.
+   * including sorted leaderboard standings, overlayConfig, and undo metadata.
    */
   getSnapshot() {
     const clonedTeams = this.state.teams.map((t) => createCanonicalTeam(t));
@@ -90,6 +98,7 @@ export class MatchEngine {
       tournamentTitle: this.state.tournamentTitle,
       stageLabel: this.state.stageLabel,
       overlayViewMode: this.state.overlayViewMode,
+      overlayConfig: sanitizeOverlayConfig(this.state.overlayConfig),
       activeGame: this.state.activeGame,
       matchId: this.state.matchId,
       roundNumber: this.state.roundNumber,
@@ -127,12 +136,18 @@ export class MatchEngine {
 
   /**
    * Updates editable broadcast metadata (tournamentTitle, stageLabel, overlayViewMode)
-   * and synchronizes live with the Overlay Viewport.
+   * and/or responsive overlay customization (overlayConfig, backgroundUpload,
+   * resetOverlayBackground, resetOverlayScorecard, resetOverlayAll) and synchronizes live.
    *
    * @param {{
    *   tournamentTitle?: string,
    *   stageLabel?: string,
-   *   overlayViewMode?: 'MATCH' | 'OVERALL' | 'END_OF_MATCH'
+   *   overlayViewMode?: 'MATCH' | 'OVERALL' | 'END_OF_MATCH',
+   *   overlayConfig?: object,
+   *   backgroundUpload?: { fileName: string, mimeType?: string, fileSize?: number, dataUrl: string },
+   *   resetOverlayBackground?: boolean,
+   *   resetOverlayScorecard?: boolean,
+   *   resetOverlayAll?: boolean
    * }} payload
    */
   updateBroadcastMeta(payload = {}) {
@@ -143,6 +158,7 @@ export class MatchEngine {
     let nextTitle = this.state.tournamentTitle;
     let nextStage = this.state.stageLabel;
     let nextMode = this.state.overlayViewMode;
+    let nextOverlayConfig = sanitizeOverlayConfig(this.state.overlayConfig);
 
     if (typeof payload.tournamentTitle === 'string') {
       const cleaned = payload.tournamentTitle.trim().slice(0, 80);
@@ -171,9 +187,50 @@ export class MatchEngine {
       nextMode = upperMode;
     }
 
+    if (payload.backgroundUpload) {
+      const bgValidation = validateBackgroundImageUpload(
+        payload.backgroundUpload
+      );
+      if (!bgValidation.valid || !bgValidation.sanitized) {
+        return {
+          ok: false,
+          error: bgValidation.error || 'Invalid background image upload.',
+        };
+      }
+      nextOverlayConfig = sanitizeOverlayConfig(
+        {
+          background: {
+            ...nextOverlayConfig.background,
+            ...bgValidation.sanitized,
+          },
+        },
+        nextOverlayConfig
+      );
+    }
+
+    if (payload.overlayConfig && typeof payload.overlayConfig === 'object') {
+      nextOverlayConfig = sanitizeOverlayConfig(
+        payload.overlayConfig,
+        nextOverlayConfig
+      );
+    }
+
+    if (payload.resetOverlayBackground) {
+      nextOverlayConfig = resetBackgroundConfig(nextOverlayConfig);
+    }
+
+    if (payload.resetOverlayScorecard) {
+      nextOverlayConfig = resetScorecardConfig(nextOverlayConfig);
+    }
+
+    if (payload.resetOverlayAll) {
+      nextOverlayConfig = createDefaultOverlayConfig();
+    }
+
     this.state.tournamentTitle = nextTitle;
     this.state.stageLabel = nextStage;
     this.state.overlayViewMode = nextMode;
+    this.state.overlayConfig = nextOverlayConfig;
     this.state.lastError = null;
     this.state.updatedAt = new Date().toISOString();
     this.state.lastEvent = {

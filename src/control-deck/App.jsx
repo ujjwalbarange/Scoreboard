@@ -12,6 +12,7 @@ import Header from './components/Header.jsx';
 import MatchToolbar from './components/MatchToolbar.jsx';
 import MatchStatus from './components/MatchStatus.jsx';
 import TeamCard from './components/TeamCard.jsx';
+import OverlayEditorPanel from './components/OverlayEditorPanel.jsx';
 import { useMatchState } from './hooks/useMatchState.js';
 import {
   playBroadcastCue,
@@ -27,6 +28,7 @@ export default function ControlDeckApp() {
   const [searchQuery, setSearchQuery] = useState('');
   const [manualPosInput, setManualPosInput] = useState('');
   const [showOverlayMonitor, setShowOverlayMonitor] = useState(true);
+  const [showOverlayEditor, setShowOverlayEditor] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(() =>
     readAudioEnabledPreference()
   );
@@ -986,22 +988,41 @@ export default function ControlDeckApp() {
               aria-label="Broadcast Overlay Viewport Monitor"
               className="w-full xl:w-[540px] 2xl:w-[600px] shrink-0 rounded-md border border-slate-800 bg-[#0d121c] p-3.5"
             >
-              <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
                 <div>
                   <h2 className="deck-display-font text-base font-bold tracking-wide text-white">
                     BROADCAST OVERLAY OVERVIEW (16:9 OBS CAPTURE)
                   </h2>
                   <p className="text-[11px] text-slate-400">
-                    16:9 Two-Column · Transparent (#00000000) · Mode:{' '}
+                    {matchState?.overlayConfig?.canvas?.width || 1920}×
+                    {matchState?.overlayConfig?.canvas?.height || 1080} ·{' '}
+                    {matchState?.overlayConfig?.background?.imageDataUrl
+                      ? 'Custom Background'
+                      : 'Transparent (#00000000)'}{' '}
+                    · Mode:{' '}
                     <strong className="text-amber-300">{overlayViewMode}</strong>
                   </p>
                 </div>
-                <a
-                  href="./overlay.html"
-                  className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-cyan-400/60 hover:text-white whitespace-nowrap shrink-0"
-                >
-                  Open Overlay URL
-                </a>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="toggle-overlay-editor-btn"
+                    onClick={() => setShowOverlayEditor((prev) => !prev)}
+                    className={`rounded border px-2 py-1 text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                      showOverlayEditor
+                        ? 'border-cyan-400/60 bg-cyan-950/50 text-cyan-300'
+                        : 'border-slate-700 bg-slate-900 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {showOverlayEditor ? 'Hide Editor' : 'Customize Overlay'}
+                  </button>
+                  <a
+                    href="./overlay.html"
+                    className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-medium text-slate-300 hover:border-cyan-400/60 hover:text-white whitespace-nowrap shrink-0"
+                  >
+                    Open Overlay URL
+                  </a>
+                </div>
               </div>
 
               {/* Checkerboard Alpha Transparency Verification Stage */}
@@ -1040,9 +1061,39 @@ export default function ControlDeckApp() {
                     </button>
                   </div>
                 ) : (
-                  <OverlayViewportApp embeddedMode={true} />
+                  <OverlayViewportApp
+                    embeddedMode={true}
+                    overrideOverlayConfig={matchState?.overlayConfig || null}
+                  />
                 )}
               </div>
+
+              {/* Responsive & Customizable Broadcast Overlay Editor */}
+              {showOverlayEditor && (
+                <OverlayEditorPanel
+                  overlayConfig={matchState?.overlayConfig}
+                  overlayViewMode={overlayViewMode}
+                  onUpdateOverlayConfig={(partialOverlayConfig) =>
+                    updateBroadcastMeta({ overlayConfig: partialOverlayConfig })
+                  }
+                  onUploadBackground={(backgroundUpload) =>
+                    updateBroadcastMeta({ backgroundUpload })
+                  }
+                  onResetBackground={() =>
+                    updateBroadcastMeta({ resetOverlayBackground: true })
+                  }
+                  onResetScorecard={() =>
+                    updateBroadcastMeta({ resetOverlayScorecard: true })
+                  }
+                  onResetAll={() =>
+                    updateBroadcastMeta({ resetOverlayAll: true })
+                  }
+                  onApplyWindowBounds={(bounds) => {
+                    const controller = getBroadcastController();
+                    controller.setOverlayBounds?.(bounds).catch(() => {});
+                  }}
+                />
+              )}
             </aside>
           )}
         </div>

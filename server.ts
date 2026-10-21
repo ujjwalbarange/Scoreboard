@@ -22,7 +22,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '2mb' }));
+  app.use(express.json({ limit: '16mb' }));
 
   const configPath = path.resolve(__dirname, 'tournament_config.json');
   let tournamentConfig = null;

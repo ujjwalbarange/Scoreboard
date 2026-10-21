@@ -2,11 +2,11 @@
 
 /*
  * Broadcast Overlay Viewport Stylesheet
- * Phase 1, 2 & 3 Addendum: 16:9 Landscape Two-Column Scorecard Overlay
+ * Phase 1, 2 & 3 Addendum: Responsive & Customizable 16:9 Landscape Two-Column Scorecard Overlay
  *
  * CRITICAL INVARIANT:
  * HTML, Body, and Root containers MUST remain strictly transparent (#00000000)
- * for OBS Studio Window Capture / Game Capture alpha compositing.
+ * when no custom background is active, ensuring clean OBS Studio alpha compositing.
  */
 
 html.overlay-html,
@@ -43,9 +43,7 @@ body.overlay-body,
 }
 
 /*
- * 16:9 Landscape Broadcast Scorecard Shell (1920x1080 Broadcast Target)
- * Scales proportionally to any landscape viewport while preserving 16:9 aspect ratio,
- * fitting all 26 teams in 2 balanced columns of 13 rows without scrolling or clipping.
+ * Responsive Outer Viewport Container (observed via ResizeObserver)
  */
 .overlay-landscape-viewport {
   width: 100vw;
@@ -53,42 +51,99 @@ body.overlay-body,
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(6px, 1vw, 18px);
+  overflow: hidden;
   box-sizing: border-box;
   background: transparent !important;
 }
 
-.overlay-hud-shell {
+/* Embedded preview wrapper inside Control Deck Overview Monitor */
+.overlay-embedded-viewport {
   width: 100%;
-  height: 100%;
-  max-width: min(100%, calc((100vh - 16px) * 16 / 9));
-  max-height: min(100%, calc((100vw - 16px) * 9 / 16));
   aspect-ratio: 16 / 9;
   display: flex;
-  flex-direction: column;
-  color: #f8fafc;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
+  position: relative;
   box-sizing: border-box;
+  background: transparent !important;
 }
 
-/* Embedded 16:9 preview inside the Control Deck Overview Monitor */
-.overlay-embedded-shell {
-  width: 100%;
-  aspect-ratio: 16 / 9;
+/* Scaled frame matching exact visual footprint of the virtual broadcast canvas */
+.overlay-scale-frame {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/*
+ * Virtual Broadcast Canvas (1920x1080, 1600x900, 1280x720, or Custom WxH)
+ * Scaled via ResizeObserver transform while all internal elements use proportional
+ * CSS variables (--ov-*) computed from the reference canvas.
+ */
+.overlay-virtual-canvas {
+  width: var(--ov-canvas-width, 1920px);
+  height: var(--ov-canvas-height, 1080px);
+  padding: var(--ov-canvas-padding, 20px);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: var(--ov-text-color, #f8fafc);
+  transform-origin: top left;
+  background: transparent;
+}
+
+/* Optional User-Uploaded Background Layer */
+.overlay-custom-background-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-repeat: no-repeat;
+  background-size: var(--ov-bg-size, cover);
+  background-position: var(--ov-bg-position, center center);
+  opacity: var(--ov-bg-opacity, 1);
+  transition: opacity 150ms ease;
+}
+
+/*
+ * Independent Scorecard / Table Stage
+ * Independently customizable width, height, X/Y offset, typography, and colors.
+ */
+.overlay-scorecard-stage {
+  position: relative;
+  z-index: 1;
+  width: var(--ov-table-width, 96%);
+  height: var(--ov-table-height, 92%);
+  transform: translate(var(--ov-offset-x, 0%), var(--ov-offset-y, 0%));
   display: flex;
   flex-direction: column;
-  color: #f8fafc;
-  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
   box-sizing: border-box;
 }
 
 .overlay-header-panel {
-  background: linear-gradient(135deg, rgba(10, 14, 23, 0.96) 0%, rgba(16, 23, 38, 0.95) 100%);
-  border-top: 2px solid #f59e0b;
+  background: var(
+    --ov-header-bg,
+    linear-gradient(135deg, rgba(10, 14, 23, 0.96) 0%, rgba(16, 23, 38, 0.95) 100%)
+  );
+  border-top: 3px solid var(--ov-accent-color, #f59e0b);
   border-left: 1px solid rgba(148, 163, 184, 0.24);
   border-right: 1px solid rgba(148, 163, 184, 0.24);
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.65);
+}
+
+.overlay-two-column-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ov-col-gap, 16px);
+  flex: 1 1 0%;
+  min-height: 0;
 }
 
 .overlay-column-card {
@@ -100,27 +155,36 @@ body.overlay-body,
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 4px;
   overflow: hidden;
-  background: rgba(9, 13, 22, 0.88);
+  background: var(--ov-table-bg, rgba(9, 13, 22, 0.88));
   box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.65);
 }
 
 .overlay-column-header {
-  background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
+  background: var(--ov-accent-color, #f59e0b);
   color: #090d16;
   flex-shrink: 0;
+  font-size: calc(var(--ov-score-font, 14px) * 0.92);
 }
 
 .overlay-column-rows {
   flex: 1 1 0%;
   min-height: 0;
   display: grid;
-  grid-template-rows: repeat(var(--overlay-rows-per-col, 13), minmax(0, 1fr));
+  grid-template-rows: repeat(
+    var(--overlay-rows-per-col, 13),
+    minmax(0, var(--ov-row-height, 1fr))
+  );
+  row-gap: var(--ov-row-gap, 1px);
+  align-content: stretch;
+  overflow: hidden;
 }
 
 .overlay-team-row {
-  background: rgba(12, 17, 28, 0.92);
+  background: var(--ov-row-bg, rgba(12, 17, 28, 0.92));
   border-bottom: 1px solid rgba(148, 163, 184, 0.14);
   min-height: 0;
+  font-size: var(--ov-team-font, 14px);
+  color: var(--ov-text-color, #f8fafc);
   transition:
     transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
     opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -132,16 +196,20 @@ body.overlay-body,
 }
 
 .overlay-team-row-top3 {
-  background: linear-gradient(90deg, rgba(16, 24, 42, 0.96) 0%, rgba(21, 31, 52, 0.94) 100%);
+  background: var(--ov-row-top3-bg, rgba(18, 28, 48, 0.95));
 }
 
 .overlay-team-row-selected {
   background: rgba(14, 34, 56, 0.96);
-  box-shadow: inset 2px 0 0 #00e5ff;
+  box-shadow: inset 3px 0 0 #00e5ff;
 }
 
 .overlay-team-row-eliminated {
   opacity: 0.64;
+}
+
+.overlay-score-value {
+  font-size: var(--ov-score-font, 14px);
 }
 
 /* Restrained compositor-only score change & rank movement animations */
@@ -184,7 +252,7 @@ body.overlay-body,
 }
 
 .overlay-rank-cell-top1 {
-  background: #f59e0b;
+  background: var(--ov-accent-color, #f59e0b);
   color: #090d16;
 }
 
@@ -200,17 +268,20 @@ body.overlay-body,
 
 .overlay-total-cell {
   background: rgba(245, 158, 11, 0.16);
-  color: #fbbf24;
+  color: var(--ov-accent-color, #fbbf24);
 }
 
 .overlay-podium-card {
-  background: linear-gradient(180deg, rgba(16, 24, 40, 0.96) 0%, rgba(11, 16, 28, 0.95) 100%);
+  background: var(
+    --ov-table-bg,
+    linear-gradient(180deg, rgba(16, 24, 40, 0.96) 0%, rgba(11, 16, 28, 0.95) 100%)
+  );
   border: 1px solid rgba(148, 163, 184, 0.22);
 }
 
 .overlay-podium-card-first {
   background: linear-gradient(180deg, rgba(45, 32, 10, 0.96) 0%, rgba(18, 22, 34, 0.96) 100%);
-  border: 1px solid rgba(245, 158, 11, 0.65);
+  border: 1px solid var(--ov-accent-color, rgba(245, 158, 11, 0.65));
 }
 
 @media (prefers-reduced-motion: reduce) {

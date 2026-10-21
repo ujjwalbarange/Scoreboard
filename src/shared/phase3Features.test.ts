@@ -19,6 +19,14 @@ import {
 import {
   splitTeamsIntoBalancedColumns,
   getTeamGridLayoutConfig,
+  createDefaultOverlayConfig,
+  sanitizeOverlayConfig,
+  resetBackgroundConfig,
+  resetScorecardConfig,
+  validateBackgroundImageUpload,
+  computeResponsiveCanvasScale,
+  checkOverlayLayoutFit,
+  computeOverlayCssVariables,
 } from './overlayLayout.js';
 
 test('Phase 3 Fuzzy Search matches slot keys, partial names, typos, and player rosters', () => {
@@ -241,4 +249,219 @@ test('Phase 3 Addendum: Controller switches to compact 3-column team selector wh
   assert.equal(withoutOverview.rowsNeeded, 9);
   assert.match(withoutOverview.gridClassName, /lg:grid-cols-3/);
 });
+
+test('Phase 3 Addendum: Responsive overlay canvas scales proportionally across 1920x1080, 1600x900, 1280x720, and custom resolutions without altering target OBS dimensions', () => {
+  // 1. 1920x1080 target rendered inside a 560x315 embedded preview monitor
+  const previewScale = computeResponsiveCanvasScale({
+    containerWidth: 560,
+    containerHeight: 315,
+    canvasWidth: 1920,
+    canvasHeight: 1080,
+  });
+  assert.equal(previewScale.canvasWidth, 1920);
+  assert.equal(previewScale.canvasHeight, 1080);
+  assert.equal(previewScale.referenceScale, 1);
+  assert.ok(previewScale.viewportScale > 0.28 && previewScale.viewportScale < 0.3);
+
+  // 2. 1600x900 (900p) and 1280x720 (720p) scale reference metrics proportionally
+  const scale900p = computeResponsiveCanvasScale({
+    containerWidth: 1600,
+    containerHeight: 900,
+    canvasWidth: 1600,
+    canvasHeight: 900,
+  });
+  assert.equal(scale900p.viewportScale, 1);
+  assert.equal(scale900p.referenceScale, 0.8333);
+
+  const scale720p = computeResponsiveCanvasScale({
+    containerWidth: 1280,
+    containerHeight: 720,
+    canvasWidth: 1280,
+    canvasHeight: 720,
+  });
+  assert.equal(scale720p.viewportScale, 1);
+  assert.equal(scale720p.referenceScale, 0.6667);
+
+  // 3. Default 1920x1080 and 1280x720 fit all 26 teams (13 rows per column) cleanly
+  const fit1080 = checkOverlayLayoutFit({
+    overlayConfig: sanitizeOverlayConfig({ canvas: { presetId: '1920x1080' } }),
+    rowsPerColumn: 13,
+  });
+  assert.equal(fit1080.fits, true);
+  assert.equal(fit1080.warning, null);
+
+  const fit720 = checkOverlayLayoutFit({
+    overlayConfig: sanitizeOverlayConfig({ canvas: { presetId: '1280x720' } }),
+    rowsPerColumn: 13,
+  });
+  assert.equal(fit720.fits, true);
+  assert.equal(fit720.warning, null);
+
+  // 4. Tiny custom canvas or excessive fixed row height triggers warning & auto-clamping
+  const tinyFit = checkOverlayLayoutFit({
+    overlayConfig: sanitizeOverlayConfig({
+      canvas: { width: 480, height: 300 },
+      scorecard: { rowHeightMode: 'fixed', rowHeightPx: 48 },
+    }),
+    rowsPerColumn: 13,
+  });
+  assert.equal(tinyFit.fits, false);
+  assert.ok(tinyFit.warning && tinyFit.warning.length > 0);
+  assert.ok(tinyFit.effectiveRowHeightPx >= 12);
+});
+
+test('Phase 3 Addendum: Background image validation, application-managed asset persistence across restarts, and independent scorecard customization', async () => {
+  const samplePngBase64 =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+  // 1. Validate valid PNG upload
+  const validUpload = validateBackgroundImageUpload({
+    fileName: 'arena_bg.png',
+    mimeType: 'image/png',
+    fileSize: 95,
+    dataUrl: samplePngBase64,
+  });
+  assert.equal(validUpload.valid, true);
+  assert.equal(validUpload.sanitized?.fileName, 'arena_bg.png');
+  assert.equal(validUpload.sanitized?.mimeType, 'image/png');
+
+  // 2. Reject invalid file extension (.exe / .gif) and oversized files
+  const badExt = validateBackgroundImageUpload({
+    fileName: 'malware.exe',
+    mimeType: 'application/octet-stream',
+    fileSize: 100,
+    dataUrl: samplePngBase64,
+  });
+  assert.equal(badExt.valid, false);
+  assert.match(badExt.error || '', /Unsupported image file extension/);
+
+  const oversized = validateBackgroundImageUpload({
+    fileName: 'huge.webp',
+    mimeType: 'image/webp',
+    fileSize: 12 * 1024 * 1024,
+    dataUrl: samplePngBase64,
+    maxBytes: 8 * 1024 * 1024,
+  });
+  assert.equal(oversized.valid, false);
+  assert.match(oversized.error || '', /exceeds maximum allowed size/);
+
+  // 3. Verify independent scorecard vs background customization and resets
+  let customCfg = sanitizeOverlayConfig(
+    {
+      background: {
+        imageDataUrl: samplePngBase64,
+        fileName: 'arena_bg.png',
+        mimeType: 'image/png',
+        fileSize: 95,
+        opacity: 0.75,
+        scaleMode: 'contain',
+        position: 'top',
+      },
+      scorecard: {
+        widthPercent: 85,
+        heightPercent: 88,
+        offsetXPercent: 5,
+        offsetYPercent: -4,
+        rowHeightMode: 'fixed',
+        rowHeightPx: 28,
+        rowGapPx: 3,
+        headerFontSizePx: 26,
+        teamFontSizePx: 16,
+        scoreFontSizePx: 17,
+        accentColor: '#06b6d4',
+        showKillPoints: false,
+      },
+    },
+    createDefaultOverlayConfig()
+  );
+
+  assert.equal(customCfg.background.opacity, 0.75);
+  assert.equal(customCfg.background.scaleMode, 'contain');
+  assert.equal(customCfg.scorecard.widthPercent, 85);
+  assert.equal(customCfg.scorecard.showKillPoints, false);
+
+  // Resetting scorecard keeps custom background intact
+  const afterScorecardReset = resetScorecardConfig(customCfg);
+  assert.equal(afterScorecardReset.background.imageDataUrl, samplePngBase64);
+  assert.equal(afterScorecardReset.background.opacity, 0.75);
+  assert.equal(afterScorecardReset.scorecard.widthPercent, 96);
+  assert.equal(afterScorecardReset.scorecard.showKillPoints, true);
+
+  // Resetting background keeps custom scorecard intact
+  const afterBgReset = resetBackgroundConfig(customCfg);
+  assert.equal(afterBgReset.background.imageDataUrl, null);
+  assert.equal(afterBgReset.scorecard.widthPercent, 85);
+  assert.equal(afterBgReset.scorecard.accentColor, '#06b6d4');
+
+  // Verify CSS variable generation
+  const { cssVars } = computeOverlayCssVariables(customCfg, 13, 'MATCH');
+  assert.equal(cssVars['--ov-table-width'], '85%');
+  assert.equal(cssVars['--ov-bg-opacity'], '0.75');
+  assert.equal(cssVars['--ov-bg-size'], 'contain');
+  assert.equal(cssVars['--ov-accent-color'], '#06b6d4');
+
+  // 4. Verify MatchManager persists background asset to disk and restores across restart
+  const tmpDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'ebc-overlay-persist-')
+  );
+  const matchesDir = path.join(tmpDir, 'matches');
+  const manager1 = new MatchManager({ matchesDir });
+
+  try {
+    await manager1.initialize();
+    const uploadRes: any = await manager1.updateBroadcastMeta({
+      backgroundUpload: {
+        fileName: 'studio_bg.png',
+        mimeType: 'image/png',
+        fileSize: 95,
+        dataUrl: samplePngBase64,
+      },
+      overlayConfig: {
+        canvas: { presetId: '1600x900', width: 1600, height: 900 },
+        scorecard: { widthPercent: 88, offsetXPercent: 4 },
+      },
+    });
+    assert.equal(uploadRes.ok, true);
+    assert.equal(
+      uploadRes.snapshot.overlayConfig.background.fileName,
+      'studio_bg.png'
+    );
+    assert.equal(uploadRes.snapshot.overlayConfig.canvas.width, 1600);
+    assert.equal(uploadRes.snapshot.overlayConfig.scorecard.widthPercent, 88);
+
+    // Check managed asset file exists on disk
+    const assetPath = path.join(matchesDir, 'assets', 'overlay_bg.png');
+    const stat = await fs.stat(assetPath);
+    assert.ok(stat.size > 0);
+
+    await manager1.dispose();
+
+    // Simulate app restart with a fresh MatchManager pointing to same matchesDir
+    const manager2 = new MatchManager({ matchesDir });
+    const restoredState: any = await manager2.initialize();
+    assert.equal(restoredState.overlayConfig.canvas.width, 1600);
+    assert.equal(restoredState.overlayConfig.canvas.height, 900);
+    assert.equal(restoredState.overlayConfig.scorecard.widthPercent, 88);
+    assert.equal(restoredState.overlayConfig.scorecard.offsetXPercent, 4);
+    assert.equal(
+      restoredState.overlayConfig.background.imageDataUrl,
+      samplePngBase64
+    );
+
+    // Remove background and verify asset file is deleted and overlay returns to transparent
+    const removeRes: any = await manager2.updateBroadcastMeta({
+      resetOverlayBackground: true,
+    });
+    assert.equal(removeRes.ok, true);
+    assert.equal(
+      removeRes.snapshot.overlayConfig.background.imageDataUrl,
+      null
+    );
+
+    await manager2.dispose();
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 

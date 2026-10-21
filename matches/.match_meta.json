@@ -1,6 +1,6 @@
 {
   "activeMatchId": "Match_01_BGMI",
-  "updatedAt": "2026-10-21T04:45:45.585Z",
+  "updatedAt": "2026-10-21T06:59:11.010Z",
   "matches": {
     "Match_01_BGMI": {
       "matchId": "Match_01_BGMI",
@@ -8,10 +8,54 @@
       "roundNumber": 1,
       "matchStatus": "LIVE",
       "filePath": "matches/Match_01_BGMI.csv",
-      "updatedAt": "2026-10-21T04:45:45.585Z"
+      "updatedAt": "2026-10-21T06:59:11.010Z"
     }
   },
   "tournamentTitle": "BGIS 2026 GRAND FINALS",
   "stageLabel": "Finals Day 01",
-  "overlayViewMode": "MATCH"
+  "overlayViewMode": "MATCH",
+  "overlayConfig": {
+    "canvas": {
+      "presetId": "1920x1080",
+      "width": 1920,
+      "height": 1080,
+      "referenceWidth": 1920,
+      "referenceHeight": 1080,
+      "lockAspectRatio": true,
+      "paddingPx": 20
+    },
+    "background": {
+      "imageDataUrl": null,
+      "fileName": null,
+      "mimeType": null,
+      "fileSize": 0,
+      "opacity": 1,
+      "scaleMode": "cover",
+      "position": "center"
+    },
+    "scorecard": {
+      "widthPercent": 96,
+      "heightPercent": 92,
+      "offsetXPercent": 0,
+      "offsetYPercent": 0,
+      "columnGapPx": 16,
+      "rowHeightMode": "auto",
+      "rowHeightPx": 32,
+      "rowGapPx": 1,
+      "headerFontSizePx": 22,
+      "teamFontSizePx": 14,
+      "scoreFontSizePx": 14,
+      "tableBgOpacity": 0.9,
+      "rowBgOpacity": 0.92,
+      "accentColor": "#f59e0b",
+      "headerBgColor": "#0a0e17",
+      "rowBgColor": "#0c111c",
+      "textColor": "#f8fafc",
+      "showHeader": true,
+      "showSlotKey": true,
+      "showAliveBars": true,
+      "showKillPoints": true,
+      "showPlacementPoints": true
+    }
+  }
 }

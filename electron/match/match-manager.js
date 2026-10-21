@@ -63,6 +63,11 @@ export class MatchManager {
     });
 
     this.metaFilePath = path.join(this.matchesDir, '.match_meta.json');
+    this.overlayConfigFilePath = path.join(
+      this.matchesDir,
+      '.overlay_config.json'
+    );
+    this.overlayAssetsDir = path.join(this.matchesDir, 'assets');
     this.initialized = false;
   }
 
@@ -86,13 +91,19 @@ export class MatchManager {
     await this.csvController.ensureDirectoryAndTemplates();
     const existingMatches = await this.csvController.listMatchFiles();
     const savedMeta = await this._readCompanionMeta();
+    const savedOverlayConfig = await this._readOverlayConfig(savedMeta);
 
-    // Restore persisted tournament title, stage label, and overlay view mode if present
+    // Restore persisted tournament title, stage label, overlay view mode, and overlay customization
     if (savedMeta && typeof savedMeta === 'object') {
       this.engine.updateBroadcastMeta({
         tournamentTitle: savedMeta.tournamentTitle,
         stageLabel: savedMeta.stageLabel,
         overlayViewMode: savedMeta.overlayViewMode,
+        overlayConfig: savedOverlayConfig || savedMeta.overlayConfig,
+      });
+    } else if (savedOverlayConfig) {
+      this.engine.updateBroadcastMeta({
+        overlayConfig: savedOverlayConfig,
       });
     }
 
@@ -354,6 +365,8 @@ export class MatchManager {
       this._notify('error', 'BROADCAST_META_ERROR', res.error);
       return res;
     }
+    await this._syncOverlayBackgroundAsset();
+    await this._writeOverlayConfig();
     await this._writeCompanionMeta();
     this._notify(
       'info',
@@ -839,6 +852,7 @@ export class MatchManager {
         tournamentTitle: this.engine.state.tournamentTitle,
         stageLabel: this.engine.state.stageLabel,
         overlayViewMode: this.engine.state.overlayViewMode,
+        overlayConfig: this.engine.state.overlayConfig,
         updatedAt: new Date().toISOString(),
         matches: {
           ...(current.matches || {}),
@@ -858,6 +872,121 @@ export class MatchManager {
       );
     } catch {
       // Non-fatal metadata write error
+    }
+  }
+
+  /**
+   * Synchronizes the active background image into an application-managed asset file
+   * inside `matches/assets/` when configured, or removes the managed asset file
+   * when background is cleared.
+   */
+  async _syncOverlayBackgroundAsset() {
+    try {
+      const bg = this.engine.state.overlayConfig?.background;
+      await fs.promises.mkdir(this.overlayAssetsDir, { recursive: true });
+
+      if (!bg || !bg.imageDataUrl) {
+        // Remove any previously stored background asset files
+        const files = await fs.promises.readdir(this.overlayAssetsDir);
+        for (const f of files) {
+          if (f.startsWith('overlay_bg.')) {
+            await fs.promises
+              .unlink(path.join(this.overlayAssetsDir, f))
+              .catch(() => {});
+          }
+        }
+        return null;
+      }
+
+      const match = String(bg.imageDataUrl).match(
+        /^data:(image\/(?:png|jpeg|jpg|webp));base64,([A-Za-z0-9+/=\s]+)$/i
+      );
+      if (!match) return null;
+
+      const mime = match[1].toLowerCase();
+      const ext =
+        mime === 'image/webp'
+          ? 'webp'
+          : mime === 'image/jpeg' || mime === 'image/jpg'
+          ? 'jpg'
+          : 'png';
+      const targetAssetName = `overlay_bg.${ext}`;
+      const targetAssetPath = path.join(this.overlayAssetsDir, targetAssetName);
+      const buffer = Buffer.from(match[2].replace(/\s+/g, ''), 'base64');
+
+      await fs.promises.writeFile(targetAssetPath, buffer);
+      return targetAssetPath;
+    } catch {
+      return null;
+    }
+  }
+
+  async _writeOverlayConfig() {
+    try {
+      const config = this.engine.state.overlayConfig;
+      if (!config) return;
+      await this.csvController.atomicWriter.writeAtomically(
+        this.overlayConfigFilePath,
+        JSON.stringify(
+          {
+            ...config,
+            updatedAt: new Date().toISOString(),
+          },
+          null,
+          2
+        )
+      );
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  async _readOverlayConfig(savedMeta = {}) {
+    try {
+      let configObj = null;
+      if (fs.existsSync(this.overlayConfigFilePath)) {
+        const raw = await fs.promises.readFile(
+          this.overlayConfigFilePath,
+          'utf-8'
+        );
+        configObj = JSON.parse(raw);
+      } else if (
+        savedMeta?.overlayConfig &&
+        typeof savedMeta.overlayConfig === 'object'
+      ) {
+        configObj = savedMeta.overlayConfig;
+      }
+
+      // If imageDataUrl was stripped or only exists on disk in matches/assets/, restore from disk
+      if (
+        configObj &&
+        configObj.background &&
+        !configObj.background.imageDataUrl &&
+        fs.existsSync(this.overlayAssetsDir)
+      ) {
+        const files = await fs.promises.readdir(this.overlayAssetsDir);
+        const assetFile = files.find((f) => f.startsWith('overlay_bg.'));
+        if (assetFile) {
+          const fullPath = path.join(this.overlayAssetsDir, assetFile);
+          const buf = await fs.promises.readFile(fullPath);
+          const ext = path.extname(assetFile).toLowerCase();
+          const mime =
+            ext === '.webp'
+              ? 'image/webp'
+              : ext === '.jpg' || ext === '.jpeg'
+              ? 'image/jpeg'
+              : 'image/png';
+          configObj.background.imageDataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+          configObj.background.mimeType = mime;
+          configObj.background.fileSize = buf.length;
+          configObj.background.fileName =
+            configObj.background.fileName || assetFile;
+        }
+      }
+
+      return configObj;
+    } catch {
+      return null;
     }
   }
 }

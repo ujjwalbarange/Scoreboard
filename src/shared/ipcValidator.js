@@ -153,11 +153,11 @@ export function validateOverlayBounds(bounds) {
       typeof raw.width !== 'number' ||
       !Number.isFinite(raw.width) ||
       raw.width < 320 ||
-      raw.width > 1920
+      raw.width > 3840
     ) {
       return {
         valid: false,
-        error: 'Overlay width must be a number between 320 and 1920.',
+        error: 'Overlay width must be a number between 320 and 3840.',
       };
     }
     sanitized.width = Math.round(raw.width);
@@ -167,12 +167,12 @@ export function validateOverlayBounds(bounds) {
     if (
       typeof raw.height !== 'number' ||
       !Number.isFinite(raw.height) ||
-      raw.height < 360 ||
-      raw.height > 1080
+      raw.height < 240 ||
+      raw.height > 2160
     ) {
       return {
         valid: false,
-        error: 'Overlay height must be a number between 360 and 1080.',
+        error: 'Overlay height must be a number between 240 and 2160.',
       };
     }
     sanitized.height = Math.round(raw.height);

@@ -1,0 +1,45 @@
+{
+  "canvas": {
+    "presetId": "1920x1080",
+    "width": 1920,
+    "height": 1080,
+    "referenceWidth": 1920,
+    "referenceHeight": 1080,
+    "lockAspectRatio": true,
+    "paddingPx": 20
+  },
+  "background": {
+    "imageDataUrl": null,
+    "fileName": null,
+    "mimeType": null,
+    "fileSize": 0,
+    "opacity": 1,
+    "scaleMode": "cover",
+    "position": "center"
+  },
+  "scorecard": {
+    "widthPercent": 96,
+    "heightPercent": 92,
+    "offsetXPercent": 0,
+    "offsetYPercent": 0,
+    "columnGapPx": 16,
+    "rowHeightMode": "auto",
+    "rowHeightPx": 32,
+    "rowGapPx": 1,
+    "headerFontSizePx": 22,
+    "teamFontSizePx": 14,
+    "scoreFontSizePx": 14,
+    "tableBgOpacity": 0.9,
+    "rowBgOpacity": 0.92,
+    "accentColor": "#f59e0b",
+    "headerBgColor": "#0a0e17",
+    "rowBgColor": "#0c111c",
+    "textColor": "#f8fafc",
+    "showHeader": true,
+    "showSlotKey": true,
+    "showAliveBars": true,
+    "showKillPoints": true,
+    "showPlacementPoints": true
+  },
+  "updatedAt": "2026-10-21T06:59:11.007Z"
+}
